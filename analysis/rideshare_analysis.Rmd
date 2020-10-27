@@ -1,0 +1,94 @@
+---
+title: "Rideshare Analysis"
+author: "Sean Connelly"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+# Load libraries
+pacman::p_load(tidyverse, summarytools, janitor, 
+               sf, leaflet, leaflet.extras, tmap,
+               DT, gghighlight, highcharter,
+               viridis, scales, hrbrthemes, ggthemes, 
+               RPostgres, RPostgreSQL, DBI,
+               config, here)
+
+# Set working directory
+setwd(here::here())
+options(scipen = 999)
+
+```
+
+### R Markdown Analysis
+
+Can generate report in HTML, print to PDF, etc
+
+```{r import data}
+
+# Connect to database
+con <- RPostgres::dbConnect(RPostgres::Postgres(), 
+                            host = config::get("host"),
+                            port = config::get("port"),
+                            dbname = config::get("dbname"),
+                            user = config::get("user"), 
+                            password = config::get("password"))
+
+# Trips
+trips <- dbGetQuery(con, "SELECT * FROM public.trips LIMIT 100;")
+# trips <- dbReadTable(con, "public.trips")
+
+# Drivers
+drivers <- dbGetQuery(con, "SELECT * FROM public.drivers LIMIT 100;")
+# drivers <- dbReadTable(con, "public.drivers")
+
+# Vehicles
+vehicles <- dbGetQuery(con, "SELECT * FROM public.vehicles LIMIT 100;")
+# vehicles <- dbReadTable(con, "public.vehicles")
+
+```
+
+### Spatial Distribution of Trips
+
+Example of type of analysis to be conducted
+
+```{r pickup tracts}
+
+# Read in data
+pickup_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.pickup_tracts_comp")
+sf_tracts <- st_read(con, layer = "spatial_tracts")
+
+# Join tabluar to spatial, reconfigure
+pickup_tracts_comp <- left_join(sf_tracts %>% select(GEOID),
+                                pickup_tracts_comp,
+                                by = c("GEOID" = "pickup_census_tract")) %>% 
+  st_as_sf() %>% 
+  mutate("trips" = as.numeric(trips))
+
+# Map
+pickup_tracts_comp %>% 
+  ggplot(aes(fill = trips)) +
+  facet_wrap(~year) +
+  geom_sf(color = "light gray") +
+  coord_sf(crs = 4326) +
+  labs(title = "Rideshare Trips by Pickup Census Tract") +
+  scale_fill_viridis_c(labels = comma) +
+  theme_ipsum()
+  
+# Quantile map
+tm_shape(pickup_tracts_comp) +
+  tm_fill(col = "trips", title = "Trips",
+          style = "quantile", palette = "viridis") +
+  tm_borders() +
+  tm_facets(by = "year", nrow = 1, drop.units = TRUE) +
+  tm_layout(main.title = "Rideshare Trips by Pickup Census Tract", 
+            main.title.position = c("center"),
+            legend.outside = FALSE, 
+            legend.position = c("left", "bottom"))
+
+```
