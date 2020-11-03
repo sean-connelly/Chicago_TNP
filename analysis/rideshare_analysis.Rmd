@@ -1,5 +1,5 @@
 ---
-title: "Rideshare Analysis"
+title: "Rideshare in Chicago During COVID-19"
 author: "Sean Connelly"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output:
@@ -12,22 +12,26 @@ editor_options:
 ```{r setup, include=FALSE}
 
 # Load libraries
-pacman::p_load(tidyverse, summarytools, janitor, 
+pacman::p_load(tidyverse, lubridate,
+               summarytools, janitor, 
                sf, leaflet, leaflet.extras, tmap,
                DT, gghighlight, highcharter,
+               knitr, kableExtra,
                viridis, scales, hrbrthemes, ggthemes, 
                RPostgres, RPostgreSQL, DBI,
                config, here)
 
 # Set working directory
 setwd(here::here())
-options(scipen = 999)
+options(scipen = 999, dplyr.summarise.inform = FALSE)
+knitr::opts_chunk$set(fig.width = 10, fig.asp = 0.618,
+                      fig.align = "center", out.width = "70%")
 
 ```
 
-### R Markdown Analysis
+### Rideshare Data
 
-Can generate report in HTML, print to PDF, etc
+This analysis relies on Transportation Network Provider (TNP) data for trips, drivers, and vehicles. These datasets are published on the City of Chicago's Data Portal and updated quarterly.
 
 ```{r import data}
 
@@ -39,8 +43,36 @@ con <- RPostgres::dbConnect(RPostgres::Postgres(),
                             user = config::get("user"), 
                             password = config::get("password"))
 
+
+
+#====================
 # Trips
-trips <- dbGetQuery(con, "SELECT * FROM public.trips LIMIT 100;")
+#====================
+
+
+
+# Import data
+daily_trips <- dbGetQuery(con, "SELECT * FROM analysis.daily_trips")
+
+# Clean and tidy
+daily_trips <- daily_trips %>% 
+  filter(year(date) %in% c(2019, 2020)) %>% 
+  mutate("year" = year(date),
+         "day" = yday(date),
+         "date_x" = date %>% 
+           as.character(.) %>%
+           str_replace("^\\d{4}","2000") %>% 
+           as_date(.),
+         "weekday" = wday(date, label = TRUE),
+         "trips" = as.numeric(trips)) 
+
+# Restrict to comparable time periods
+yoy_period <- daily_trips %>% filter(year == max(year))
+
+daily_trips <- daily_trips %>% 
+  filter(day %in% yoy_period$day)
+
+# trips <- dbGetQuery(con, "SELECT * FROM public.trips LIMIT 100;")
 # trips <- dbReadTable(con, "public.trips")
 
 # Drivers
@@ -53,13 +85,55 @@ vehicles <- dbGetQuery(con, "SELECT * FROM public.vehicles LIMIT 100;")
 
 ```
 
+### Daily Trips
+
+```{r daily trips}
+
+# Plot information
+daily_trips_plot_title <- daily_trips %>%
+  group_by(year) %>%
+  summarize(trips = sum(trips)) %>%
+  pivot_wider(everything(), names_from = "year", values_from = "trips") %>% 
+  mutate("change" = `2020`-`2019`,
+         "change_pct" = (change/`2019`),
+         "title_text" = paste0(as.character(comma(-change)), " (", percent(change_pct), ")"))
+
+# Daily Trips YoY Plot
+daily_trips %>% 
+  mutate("year" = as.character(year)) %>% 
+  group_by(year) %>% 
+  arrange(date_x) %>%
+  mutate(trips_agg = cumsum(trips)) %>% 
+  ggplot(aes(x = date_x, y = trips_agg, color = year)) +
+  geom_line(size = 1.5) +
+  geom_vline(xintercept = as.numeric(as.Date("2000-03-21")), linetype = 4, 
+             color = "black", size = 1) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%d") +
+  scale_y_continuous(labels = comma) +
+  labs(title = paste0("Compared to the same period in 2019 (1/1-6/1), \nrideshare trips have decreased by ",
+                      daily_trips_plot_title$title_text, " in 2020"),
+       x = "Day of the Year", y = "Aggregate Trips",
+       color = "Year") +
+  scale_color_ipsum() +
+  theme_ipsum()
+
+# Table
+daily_trips_plot_title %>% 
+  mutate(across(c(`2019`, `2020`, change), comma),
+         "change_pct" = percent(change_pct)) %>% 
+  select(`2019`, `2020`, "Change" = change, "Change (%)" = change_pct) %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+```
+
 ### Spatial Distribution of Trips
 
 Example of type of analysis to be conducted
 
 ```{r pickup tracts}
 
-# Read in data
+# Import data
 pickup_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.pickup_tracts_comp")
 sf_tracts <- st_read(con, layer = "spatial_tracts")
 
@@ -76,8 +150,8 @@ pickup_tracts_comp %>%
   facet_wrap(~year) +
   geom_sf(color = "light gray") +
   coord_sf(crs = 4326) +
-  labs(title = "Rideshare Trips by Pickup Census Tract") +
   scale_fill_viridis_c(labels = comma) +
+  labs(title = "Rideshare Trips by Pickup Census Tract") +
   theme_ipsum()
   
 # Quantile map
