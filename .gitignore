@@ -38,3 +38,6 @@ vignettes/*.pdf
 # Config file
 **/*.yml
 
+data/drivers.csv
+data/trips.csv
+data/vehicles.csv
