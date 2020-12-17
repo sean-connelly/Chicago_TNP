@@ -1,6 +1,5 @@
 ---
 title: "Rideshare in Chicago During COVID-19"
-author: "Sean Connelly"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output:
   html_document:
@@ -15,7 +14,7 @@ editor_options:
 pacman::p_load(tidyverse, lubridate,
                summarytools, janitor, 
                sf, leaflet, leaflet.extras, tmap,
-               DT, gghighlight, highcharter,
+               DT, gghighlight, plotly,
                knitr, kableExtra,
                viridis, scales, hrbrthemes, ggthemes, 
                RPostgres, RPostgreSQL, DBI,
@@ -24,8 +23,8 @@ pacman::p_load(tidyverse, lubridate,
 # Set working directory
 setwd(here::here())
 options(scipen = 999, dplyr.summarise.inform = FALSE)
-knitr::opts_chunk$set(fig.width = 10, fig.asp = 0.618,
-                      fig.align = "center", out.width = "70%")
+knitr::opts_chunk$set(fig.width = 12, fig.asp = 0.618,
+                      fig.align = "center", out.width = "90%")
 
 ```
 
@@ -43,20 +42,31 @@ con <- RPostgres::dbConnect(RPostgres::Postgres(),
                             user = config::get("user"), 
                             password = config::get("password"))
 
+# Load in other data
+# trips <- dbGetQuery(con, "SELECT * FROM public.trips LIMIT 100;")
+# trips <- dbReadTable(con, "public.trips")
 
+# Drivers
+# drivers <- dbGetQuery(con, "SELECT * FROM public.drivers LIMIT 100;")
+# drivers <- dbReadTable(con, "public.drivers")
 
-#====================
-# Trips
-#====================
+# Vehicles
+# vehicles <- dbGetQuery(con, "SELECT * FROM public.vehicles LIMIT 100;")
+# vehicles <- dbReadTable(con, "public.vehicles")
 
+```
 
+## Trips Over Time
+
+### Daily Trips
+
+```{r daily trips import}
 
 # Import data
 daily_trips <- dbGetQuery(con, "SELECT * FROM analysis.daily_trips")
 
 # Clean and tidy
-daily_trips <- daily_trips %>% 
-  filter(year(date) %in% c(2019, 2020)) %>% 
+daily_trips <- daily_trips %>%
   mutate("year" = year(date),
          "day" = yday(date),
          "date_x" = date %>% 
@@ -66,28 +76,11 @@ daily_trips <- daily_trips %>%
          "weekday" = wday(date, label = TRUE),
          "trips" = as.numeric(trips)) 
 
-# Restrict to comparable time periods
-yoy_period <- daily_trips %>% filter(year == max(year))
-
-daily_trips <- daily_trips %>% 
-  filter(day %in% yoy_period$day)
-
-# trips <- dbGetQuery(con, "SELECT * FROM public.trips LIMIT 100;")
-# trips <- dbReadTable(con, "public.trips")
-
-# Drivers
-drivers <- dbGetQuery(con, "SELECT * FROM public.drivers LIMIT 100;")
-# drivers <- dbReadTable(con, "public.drivers")
-
-# Vehicles
-vehicles <- dbGetQuery(con, "SELECT * FROM public.vehicles LIMIT 100;")
-# vehicles <- dbReadTable(con, "public.vehicles")
-
 ```
 
-### Daily Trips
 
-```{r daily trips}
+
+```{r daily trips plot}
 
 # Plot information
 daily_trips_plot_title <- daily_trips %>%
@@ -96,42 +89,158 @@ daily_trips_plot_title <- daily_trips %>%
   pivot_wider(everything(), names_from = "year", values_from = "trips") %>% 
   mutate("change" = `2020`-`2019`,
          "change_pct" = (change/`2019`),
-         "title_text" = paste0(as.character(comma(-change)), " (", percent(change_pct), ")"))
+         "title_text" = paste0(as.character(comma(-change)), 
+                               " (", percent(change_pct), ")"))
 
-# Daily Trips YoY Plot
-daily_trips %>% 
-  mutate("year" = as.character(year)) %>% 
+# Daily trips YoY plot
+gg_daily_trips <- daily_trips %>% 
   group_by(year) %>% 
   arrange(date_x) %>%
   mutate(trips_agg = cumsum(trips)) %>% 
-  ggplot(aes(x = date_x, y = trips_agg, color = year)) +
+  ggplot(aes(x = date_x, y = trips_agg, color = as.character(year))) +
   geom_line(size = 1.5) +
   geom_vline(xintercept = as.numeric(as.Date("2000-03-21")), linetype = 4, 
              color = "black", size = 1) +
   scale_x_date(date_breaks = "1 month", date_labels = "%b-%d") +
   scale_y_continuous(labels = comma) +
-  labs(title = paste0("Compared to the same period in 2019 (1/1-6/1), \nrideshare trips have decreased by ",
+  labs(title = paste0("Compared to the same period in 2019 (1/1-9/30), \nrideshare trips have decreased by ",
                       daily_trips_plot_title$title_text, " in 2020"),
        x = "Day of the Year", y = "Aggregate Trips",
        color = "Year") +
   scale_color_ipsum() +
   theme_ipsum()
 
-# Table
-daily_trips_plot_title %>% 
+# Interactive plot
+ggplotly(gg_daily_trips)
+
+```
+
+Prior to Governor Pritzker's Stay-at-Home Order going into effect on March 21st, trips were already down by about 7 percent year-over-year. However, the bulk of the decline in rideshare occurred over the spring and summer. From late March to October, only 17 million rideshare trips were taken in Chicago, a 71 percent decline compared to 2019.
+
+```{r daily trips table}
+
+# Pre/Post COVID table
+daily_trips %>%
+  mutate("covid_group" = ifelse(date_x >= "2000-03-21", "Post-COVID", "Pre-COVID")) %>% 
+  mutate("covid_group" = factor(covid_group, 
+                                levels = c("Pre-COVID", "Post-COVID"))) %>% 
+  group_by(covid_group, year) %>%
+  summarize(trips = sum(trips)) %>%
+  ungroup() %>% 
+  pivot_wider(names_from = "year", values_from = "trips") %>% 
+  adorn_totals("row") %>% 
+  mutate("change" = `2020`-`2019`,
+         "change_pct" = (change/`2019`)) %>% 
   mutate(across(c(`2019`, `2020`, change), comma),
          "change_pct" = percent(change_pct)) %>% 
-  select(`2019`, `2020`, "Change" = change, "Change (%)" = change_pct) %>% 
+  select("Period" = covid_group, `2019`, `2020`, 
+         "Change" = change, "Change (%)" = change_pct) %>% 
   kbl() %>% 
+  row_spec(3, bold = TRUE) %>% 
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 
 ```
 
-### Spatial Distribution of Trips
+It is clear that behavior changed in March even before the Stay-at-Home Order, as trips per day decreased significantly after Saturday, March 14th, 2020, a full week before the Order went into effect.
 
-Example of type of analysis to be conducted
+```{r trips per day plot}
 
-```{r pickup tracts}
+# Trips per day YoY plot
+gg_trips_per_day <- daily_trips %>%
+  filter(month(date, label = TRUE) %in% c("Feb", "Mar")) %>% 
+  group_by(year) %>% 
+  arrange(date_x) %>%
+  ggplot(aes(x = date_x, y = trips, color = as.character(year))) +
+  geom_line(size = 1.5) +
+  geom_vline(xintercept = as.numeric(as.Date("2000-03-21")), linetype = 4, 
+             color = "black", size = 1) +
+  scale_x_date(date_breaks = "1 week", date_labels = "%b-%d") +
+  scale_y_continuous(labels = comma) +
+  labs(title = paste0("Trips per Day fell before the Stay-at-Home Order went into effect,\n peaking at 360,000 trips on Saturday, March 14th, 2020"),
+       x = "Day of the Year", y = "Trips per Day",
+       color = "Year") +
+  scale_color_ipsum() +
+  theme_ipsum()
+
+# Interactive plot
+ggplotly(gg_trips_per_day)
+
+```
+
+### Monthly Trips
+
+```{r monthly trips import}
+
+# Import data
+monthly_trips <- dbGetQuery(con, "SELECT * FROM analysis.monthly_trips")
+
+# Clean and tidy
+monthly_trips <- monthly_trips %>% 
+  mutate("year" = year(month),
+         "date_x" = floor_date(month, unit = "month") %>% 
+           as.character(.) %>%
+           str_replace("^\\d{4}","2000") %>% 
+           as_date(.),
+         "month" = month(month, label = TRUE, abbr = TRUE),
+         "trips" = as.numeric(trips)) 
+
+```
+
+Taking a step back to examine trips per month, rideshare trips reached a low of 1.5 million in April. While trips rebounded slightly in the following months, they have hovered around 3.5 million from July through September.
+
+```{r monthly trips}
+
+# Monthly trips YoY plot
+gg_monthly_trips <- monthly_trips %>% 
+  ggplot(aes(x = date_x, y = trips, fill = as.character(year))) +
+  geom_bar(stat = "identity", color = "black",
+           position = position_dodge(width = 25), width = 20) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  scale_y_continuous(labels = comma) +
+  labs(title = paste0("Trips per Month declined significantly in March,\nbottoming out at 1.5 million in April"),
+       x = "Month", y = "Trips",
+       fill = "Year") +
+  scale_color_ipsum() +
+  theme_ipsum()
+
+# Interactive plot
+ggplotly(gg_monthly_trips)
+
+```
+
+### Trips by Hour and Day of the Week
+
+```{r day of week trips plot}
+
+# Day of week YoY plot
+# Pre/Post COVID table
+gg_day_of_week_trips <- daily_trips %>%
+  mutate("covid_group" = ifelse(date_x >= "2000-03-21", "Post-COVID", "Pre-COVID")) %>% 
+  mutate("covid_group" = factor(covid_group, 
+                                levels = c("Pre-COVID", "Post-COVID"))) %>% 
+  group_by(covid_group, year, weekday) %>%
+  summarize(trips = sum(trips)) %>%
+  ungroup() %>%
+  ggplot(aes(x = weekday, y = trips, fill = as.character(year))) +
+  geom_bar(stat = "identity", color = "black") +
+  # scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  scale_y_continuous(labels = comma) +
+  labs(title = paste0("Trips per Day of Week, Pre/Post-COVID"),
+       x = "Month", y = "Trips",
+       fill = "Year") +
+  facet_grid(year ~ covid_group) +
+  scale_color_ipsum() +
+  theme_ipsum()
+
+# Interactive plot
+ggplotly(gg_day_of_week_trips)
+```
+
+## Spatial Distribution of Trips
+
+### Pickups
+
+```{r pickup tracts data import}
 
 # Import data
 pickup_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.pickup_tracts_comp")
@@ -142,25 +251,80 @@ pickup_tracts_comp <- left_join(sf_tracts %>% select(GEOID),
                                 pickup_tracts_comp,
                                 by = c("GEOID" = "pickup_census_tract")) %>% 
   st_as_sf() %>% 
-  mutate("trips" = as.numeric(trips))
+  mutate("trips" = as.numeric(trips),
+         "covid_group" = factor(covid_group, 
+                                levels = c("Pre-COVID", "Post-COVID"))) %>% 
+  arrange(covid_group, GEOID)
+
+```
+
+In the Pre-COVID period (1/1-3/21) the spatial distribution of rideshare pickups in 2019 and 2020 were very similar. After the Stay-at-Home Order went into effect, however, trips cratered, particularly on the South, West, and Northwest Sides. Even the core area of high trip activity, roughly including the Loop and the North Side, shrunk in size.
+
+```{r pickup tracts map}
 
 # Map
-pickup_tracts_comp %>% 
-  ggplot(aes(fill = trips)) +
-  facet_wrap(~year) +
-  geom_sf(color = "light gray") +
-  coord_sf(crs = 4326) +
-  scale_fill_viridis_c(labels = comma) +
-  labs(title = "Rideshare Trips by Pickup Census Tract") +
-  theme_ipsum()
+# pickup_tracts_comp %>% 
+#   ggplot(aes(fill = trips)) +
+#   facet_wrap(~year) +
+#   geom_sf(color = "light gray") +
+#   coord_sf(crs = 4326) +
+#   scale_fill_viridis_c(labels = comma) +
+#   labs(title = "Rideshare Trips by Pickup Census Tract") +
+#   theme_ipsum()
   
 # Quantile map
 tm_shape(pickup_tracts_comp) +
   tm_fill(col = "trips", title = "Trips",
           style = "quantile", palette = "viridis") +
   tm_borders() +
-  tm_facets(by = "year", nrow = 1, drop.units = TRUE) +
+  tm_facets(by = c("covid_group", "year"), drop.units = TRUE) +
   tm_layout(main.title = "Rideshare Trips by Pickup Census Tract", 
+            main.title.position = c("center"),
+            legend.outside = FALSE, 
+            legend.position = c("left", "bottom"))
+
+```
+
+### Dropoffs
+
+```{r dropoff tracts data import}
+
+# Import data
+dropoff_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.dropoff_tracts_comp")
+
+# Join tabluar to spatial, reconfigure
+dropoff_tracts_comp <- left_join(sf_tracts %>% select(GEOID),
+                                 dropoff_tracts_comp,
+                                 by = c("GEOID" = "dropoff_census_tract")) %>% 
+  st_as_sf() %>% 
+  mutate("trips" = as.numeric(trips),
+         "covid_group" = factor(covid_group, 
+                                levels = c("Pre-COVID", "Post-COVID"))) %>% 
+  arrange(covid_group, GEOID)
+
+```
+
+
+
+```{r dropoff tracts map}
+
+# Map
+# dropoff_tracts_comp %>% 
+#   ggplot(aes(fill = trips)) +
+#   facet_wrap(~year) +
+#   geom_sf(color = "light gray") +
+#   coord_sf(crs = 4326) +
+#   scale_fill_viridis_c(labels = comma) +
+#   labs(title = "Rideshare Trips by Dropoff Census Tract") +
+#   theme_ipsum()
+  
+# Quantile map
+tm_shape(dropoff_tracts_comp) +
+  tm_fill(col = "trips", title = "Trips",
+          style = "quantile", palette = "viridis") +
+  tm_borders() +
+  tm_facets(by = c("covid_group", "year"), drop.units = TRUE) +
+  tm_layout(main.title = "Rideshare Trips by Dropoff Census Tract", 
             main.title.position = c("center"),
             legend.outside = FALSE, 
             legend.position = c("left", "bottom"))
