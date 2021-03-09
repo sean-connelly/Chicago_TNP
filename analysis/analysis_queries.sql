@@ -36,7 +36,7 @@ set session my.vars.period_2_end_date = '2020-09-30';
 
 
 
---BASE ANALYSIS TABLES
+--BASE ANALYSIS TABLE
 --Trips YOY
 drop table if exists analysis.base_ytd;
 create table analysis.base_ytd as
@@ -48,7 +48,8 @@ case when (trip_start between current_setting('my.vars.period_1_covid_date')::da
 		   trip_start between current_setting('my.vars.period_2_covid_date')::date and
 							   current_setting('my.vars.period_2_end_date')::date)
 	 then 'Post-COVID'
-	 else 'Pre-COVID' end as covid_group							 
+	 else 'Pre-COVID' end as covid_group,
+date_part('year', trip_start) as year
 from public.trips
 where
   --YTD restriction
@@ -57,7 +58,10 @@ where
 	   or
 	   trip_start between current_setting('my.vars.period_2_start_date')::date and
 	                       current_setting('my.vars.period_2_end_date')::date);
-						   
+
+
+
+--TRIPS OVER TIME
 --Daily trips
 drop table if exists analysis.daily_trips;
 create table analysis.daily_trips as
@@ -123,6 +127,51 @@ where fare is not null
   and trip_seconds between 30 and 21600
 group by month
 order by month;
+
+
+
+--TRIP CHARACTERISTICS
+--Trip Cost/Total Fare
+drop table if exists analysis.tnp_trip_chars;
+create table analysis.tnp_trip_chars as
+select
+  covid_group,
+  year,
+  count(*) as trips,
+  avg(trip_seconds) as trip_seconds,
+  avg(trip_miles) as trip_miles,
+  avg(fare) as fare,
+  avg(extras) as extras,
+  avg(trip_total) as trip_total
+from analysis.base_ytd
+where fare is not null
+  and trip_miles is not null
+  and trip_seconds is not NULL
+  and fare between 1 and 1000
+  and trip_total between 1 and 1000
+  and trip_miles between 0 and 250
+  and trip_seconds between 30 and 21600
+group by covid_group, year
+order by covid_group, year;
+
+--Fares
+drop table if exists analysis.tnp_fares;
+create table analysis.tnp_fares as
+select
+  covid_group,
+  year,
+  fare,
+  count(*) as trips
+from analysis.base_ytd
+where fare is not null
+  and trip_miles is not null
+  and trip_seconds is not NULL
+  and fare between 1 and 1000
+  and trip_total between 1 and 1000
+  and trip_miles between 0 and 250
+  and trip_seconds between 30 and 21600
+group by covid_group, year, fare
+order by covid_group, year, fare;
 
 
 
