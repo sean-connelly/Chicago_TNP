@@ -14,21 +14,19 @@ editor_options:
 ```{r setup, include=FALSE}
 
 # Load libraries
-library(tidyverse);library(lubridate);library(janitor);
+library(tidyverse);library(lubridate);library(janitor)
 library(sf);library(stplanr);library(leaflet)
-library(leaflet.extras);library(tmap);library(DT)
-library(gghighlight);library(plotly);library(knitr)
+library(leaflet.extras);library(tmap);library(gghighlight)
+library(plotly);library(knitr);library(here)
 library(kableExtra);library(viridis);library(scales)
 library(hrbrthemes);library(ggthemes);library(RPostgres)
 library(RPostgreSQL);library(DBI);library(config)
-library(here)
 
 # Set working directory and options
 setwd(here::here())
 options(scipen = 999, stringsAsFactors = FALSE, dplyr.summarise.inform = FALSE)
 knitr::opts_chunk$set(fig.width = 12, fig.asp = 0.618,
                       fig.align = "center", out.width = "100%")
-tmap_options(output.size = 80)
 
 ```
 
@@ -320,7 +318,7 @@ trip_chars_avg %>%
 
 ### Fares
 
-```{r fares}
+```{r fares, warning=FALSE}
 
 # Import data
 fares <- dbGetQuery(con, "SELECT * FROM analysis.tnp_fares") %>% 
@@ -333,13 +331,13 @@ fares_pct <- fares %>%
   group_by(covid_group, year) %>% 
   arrange(year, covid_group, fare) %>% 
   mutate("trips_pct" = trips / sum(trips),
-         "trips_pct_cuml" = cumsum(trips_pct)) %>% 
+         "trips_pct_agg" = cumsum(trips_pct)) %>% 
   ungroup()
 
 # 95% of trips in all periods <$30 dollars
 fares_tail <- fares_pct %>% 
   group_by(covid_group, year) %>% 
-  filter(trips_pct_cuml < 0.95) %>% 
+  filter(trips_pct_agg < 0.95) %>% 
   arrange(desc(fare)) %>% 
   slice(1) %>% 
   ungroup()
@@ -424,7 +422,8 @@ tm_shape(origin_tracts_comp) +
   tm_fill(col = "trips", title = "Trips",
           style = "quantile", palette = "viridis") +
   tm_borders() +
-  tm_facets(by = c("covid_group", "year"), 
+  tm_facets(by = c("covid_group", "year"),
+            free.coords = FALSE,
             drop.units = TRUE) +
   tm_layout(main.title = "Rideshare Trips by Origin Census Tract", 
             main.title.position = c("center"),
@@ -472,7 +471,8 @@ tm_shape(destination_tracts_comp) +
   tm_fill(col = "trips", title = "Trips",
           style = "quantile", palette = "viridis") +
   tm_borders() +
-  tm_facets(by = c("covid_group", "year"), 
+  tm_facets(by = c("covid_group", "year"),
+            free.coords = FALSE,
             drop.units = TRUE) +
   tm_layout(main.title = "Rideshare Trips by Destination Census Tract", 
             main.title.position = c("center"),
@@ -483,7 +483,7 @@ tm_shape(destination_tracts_comp) +
 
 ### Origin-Destination (OD) Flows
 
-```{r origin-destination tracts data import}
+```{r origin-destination tracts data import, warning=FALSE}
 
 # Import data
 od_pairs_raw <- dbGetQuery(con, "SELECT * FROM analysis.trip_patterns_tracts_comp") %>% 
@@ -553,32 +553,61 @@ od_pairs_pct <- od_pairs_comp %>%
   group_by(covid_group, year) %>% 
   arrange(year, covid_group, desc(trips)) %>% 
   mutate("trips_pct" = trips / sum(trips),
-         "trips_pct_cuml" = cumsum(trips_pct)) %>% 
+         "trips_pct_agg" = cumsum(trips_pct)) %>% 
   ungroup()
 
 # 90% of OD trip pairs in all periods >10 trips
 od_pairs_tail <- od_pairs_pct %>% 
   group_by(covid_group, year) %>% 
-  filter(trips_pct_cuml < 0.90) %>% 
+  filter(trips_pct_agg < 0.90) %>% 
   arrange(trips) %>% 
   slice(1) %>% 
   ungroup()
 
-# OD flows map
-tm_shape(sf_tracts) +
+# OD flows map (all tracts)
+tmap_od_all <- tm_shape(sf_tracts) +
   tm_borders() +
   tm_shape(od_pairs_comp %>% 
              filter(trips >= 1000)) +
   tm_lines(col = "trips", title = "Trips", 
            style = "quantile", palette = "viridis",
            lwd = "lwd", title.lwd = "Trips",
-           scale = 9, alpha = 0.5,
+           scale = 50, alpha = 0.5,
            legend.lwd.show = FALSE) +
   tm_facets(by = c("covid_group", "year"), 
+            free.coords = FALSE,
             drop.units = TRUE) +
-  tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD) Pairs", 
+  tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD) Pairs\nOD Pairs with 1,000+ Trips", 
             main.title.position = c("center"),
             legend.outside = FALSE, 
-            legend.position = c("left", "bottom"))
+            legend.position = c("left", "bottom"),
+            asp = 1.5)
+
+tmap_od_all
+
+# OD flows map (excluding airports - GEOIDs 17031980000, )
+tmap_od_subset <- tm_shape(sf_tracts) +
+  tm_borders() +
+  tm_shape(od_pairs_comp %>% 
+             filter(trips >= 1000,
+                    !pickup_census_tract %in% c("17031980000", 
+                                                "17031980100"),
+                    !dropoff_census_tract %in% c("17031980000", 
+                                                 "17031980100"),)) +
+  tm_lines(col = "trips", title = "Trips", 
+           style = "quantile", palette = "viridis",
+           lwd = "lwd", title.lwd = "Trips",
+           scale = 100, alpha = 0.5,
+           legend.lwd.show = FALSE) +
+  tm_facets(by = c("covid_group", "year"), 
+            free.coords = FALSE,
+            drop.units = TRUE) +
+  tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD) Pairs\nOD Pairs with 1,000+ Trips\nExcluding O'Hare, Midway Airports", 
+            main.title.position = c("center"),
+            legend.outside = FALSE, 
+            legend.position = c("left", "bottom"),
+            asp = 1.5)
+
+tmap_od_subset
 
 ```
