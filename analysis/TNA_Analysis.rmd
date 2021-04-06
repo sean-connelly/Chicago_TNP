@@ -1,0 +1,486 @@
+title: "Rideshare in Chicago During COVID-19"
+author: "Sean Connelly"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+  code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+  
+```{r setup, include=FALSE}
+# Load libraries
+install.packages("pacman")
+pacman::p_load(tidyverse, lubridate,
+               summarytools, janitor, 
+               sf, leaflet, leaflet.extras, tmap,
+               DT, gghighlight, highcharter,
+               knitr, kableExtra,
+               viridis, scales, hrbrthemes, ggthemes, 
+               RPostgres, RPostgreSQL, DBI,
+               config, here)
+# Set working directory
+
+options(scipen = 999, dplyr.summarise.inform = FALSE)
+knitr::opts_chunk$set(fig.width = 10, fig.asp = 0.618,
+                      fig.align = "center", out.width = "70%")
+
+```
+
+### Rideshare Data
+
+This analysis relies on Transportation Network Provider (TNP) data for trips, drivers, and vehicles. These datasets are published on the City of Chicago's Data Portal and updated quarterly.
+
+```{r import data}
+# Connect to database
+
+
+
+
+
+
+con <- RPostgres::dbConnect(RPostgres::Postgres(), 
+                            host = config::get("host"),
+                            port = config::get("port"),
+                            dbname = config::get("dbname"),
+                            user = config::get("user"), 
+                            password = config::get("password"))
+#====================
+# Trips
+#====================
+# Import data
+daily_trips <- dbGetQuery(con, "SELECT * FROM analysis.daily_trips")
+
+# Clean and tidy
+daily_trips <- daily_trips %>% 
+  filter(year(date) %in% c(2019, 2020)) %>% 
+  mutate("year" = year(date),
+         "day" = yday(date),
+         "date_x" = date %>% 
+           as.character(.) %>%
+           str_replace("^\\d{4}","2000") %>% 
+           as_date(.),
+         "weekday" = wday(date, label = TRUE),
+         "trips" = as.numeric(trips)) 
+
+
+
+t1 = ymd("2019-03-01")
+t2 = ymd("2019-06-01")
+t3 = ymd("2019-07-01")
+t4 = ymd("2019-10-01")
+t5 = ymd("2019-11-01")
+t6 = ymd("2020-02-01")
+t7 = ymd("2020-03-01")
+t8 = ymd("2020-06-01")
+t9 = ymd("2020-07-01")
+t10 = ymd("2020-10-01")
+
+int1 = interval(t1, t2)
+int2 = interval(t2, t3)
+int3 = interval(t3, t4)
+int4 = interval(t4, t5)
+int5 = interval(t5, t6)
+int6 = interval(t6, t7)
+int7 = interval(t7, t8)
+int8 = interval(t8, t9)
+int9 = interval(t9, t10)
+
+
+
+# Driver Analysis
+
+drivers$year_rp <- year(drivers$month_reported)
+drivers$month_rp <- month(drivers$month_reported)
+drivers$year_st <- year(drivers$driver_start_month)
+drivers$month_st <- month(drivers$driver_start_month)
+
+driverdata19 <- subset(drivers, year_rp=="2019")
+driverdata20 <- subset(drivers, year_rp=="2020")
+driverdata19_20 <- subset(drivers, year_rp=="2020" | year_rp=="2019")
+
+monthly_driver_plot_title <- driverdata20 %>%
+  group_by(month_st,month_rp,year_st) %>%
+  summarise(mean_size = mean(number_of_trips, na.rm = TRUE))
+write.csv(monthly_driver_plot_title, "C:\\Users\\YJ\\Downloads\\driver20.csv")
+driversummary2019 <- driverdata19 %>%
+  group_by(month_st,month_rp,year_st) %>%
+  summarise(mean_size = mean(number_of_trips, na.rm = TRUE))
+write.csv(driversummary2019, "C:\\Users\\YJ\\Downloads\\driver19.csv")
+
+monthly_driver <- driverdata19_20 %>%
+  group_by(month_rp,year_rp) %>%
+  summarise(mean_size = mean(number_of_trips, na.rm = TRUE))
+
+driverdata19_20$newdriver<- NA
+driverdata19_20$newdriver[driverdata19_20$month_reported==driverdata19_20$driver_start_month] <-"1"
+table(driverdata19_20$month_reported[ driverdata19_20$newdriver==1])
+
+
+
+driverdata19_20$fulltime<- NA
+driverdata19_20$fulltime[ driverdata19_20$number_of_trips>=30 & driverdata19_20$period1==1] <-"1"
+driverdata19_20$fulltime[ driverdata19_20$number_of_trips<30 & driverdata19_20$period1==1] <-"0"
+driverdata19_20$fulltime[ driverdata19_20$number_of_trips>=80 & driverdata19_20$period1==2] <-"1"
+driverdata19_20$fulltime[ driverdata19_20$number_of_trips<80 & driverdata19_20$period1==2] <-"0"
+driverdata19_20$fulltime[ driverdata19_20$number_of_trips>=80 & driverdata19_20$period1==3] <-"1"
+driverdata19_20$fulltime[ driverdata19_20$number_of_trips<80 & driverdata19_20$period1==3] <-"0"
+driverdata19_20$fulltime[ driverdata19_20$number_of_trips>=80 & driverdata19_20$period1==4] <-"1"
+driverdata19_20$fulltime[ driverdata19_20$number_of_trips<80 & driverdata19_20$period1==4] <-"0"
+
+sum(driverdata19_20$fulltime[driverdata19_20$period1==1 & driverdata19_20$period==1])
+table(driverdata19_20$fulltime[driverdata19_20$period1==1 & driverdata19_20$period==1])
+table(driverdata19_20$fulltime[driverdata19_20$period1==2 & driverdata19_20$period==2])
+table(driverdata19_20$fulltime[driverdata19_20$period1==3 & driverdata19_20$period==3])
+table(driverdata19_20$fulltime[driverdata19_20$period1==4 & driverdata19_20$period==4])
+
+table(driverdata19_20$fulltime[driverdata19_20$period1==1])
+table(driverdata19_20$fulltime[driverdata19_20$period1==2])
+table(driverdata19_20$fulltime[driverdata19_20$period1==3])
+table(driverdata19_20$fulltime[driverdata19_20$period1==4])
+
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2020-06-01" & driverdata19_20$month_reported=="2020-06-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2020-05-01" & driverdata19_20$month_reported=="2020-05-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2020-04-01" & driverdata19_20$month_reported=="2020-04-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2020-03-01" & driverdata19_20$month_reported=="2020-03-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2020-02-01" & driverdata19_20$month_reported=="2020-02-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2020-01-01" & driverdata19_20$month_reported=="2020-01-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-12-01" & driverdata19_20$month_reported=="2019-12-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-11-01" & driverdata19_20$month_reported=="2019-11-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-10-01" & driverdata19_20$month_reported=="2019-10-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-09-01" & driverdata19_20$month_reported=="2019-09-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-08-01" & driverdata19_20$month_reported=="2019-08-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-07-01" & driverdata19_20$month_reported=="2019-07-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-06-01" & driverdata19_20$month_reported=="2019-06-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-05-01" & driverdata19_20$month_reported=="2019-05-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-04-01" & driverdata19_20$month_reported=="2019-04-01"])
+table(driverdata19_20$state[driverdata19_20$driver_start_month=="2019-03-01" & driverdata19_20$month_reported=="2019-03-01"])
+
+table(driverdata19_20$driver_start_month=="2019-03-01" & driverdata19_20$month_reported=="2019-03-01" & driverdata19_20$city=="Chicago")
+
+sum(driverdata19_20$driver_start_month=="2020-03-01" & driverdata19_20$month_reported=="2020-03-01")
+sum(driverdata19_20$driver_start_month=="2020-01-01" & driverdata19_20$month_reported=="2020-01-01")
+sum(driverdata19_20$driver_start_month=="2020-03-01" & driverdata19_20$month_reported=="2020-03-01")
+
+
+sum(driverdata19_20$driver_start_month=="2020-01-01" & driverdata19_20$month_reported=="2020-01-01")
+sum(driverdata19_20$driver_start_month=="2020-03-01" & driverdata19_20$month_reported=="2020-03-01")
+
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2020-06-01" & driverdata19_20$month_reported=="2020-06-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2020-05-01" & driverdata19_20$month_reported=="2020-05-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2020-04-01" & driverdata19_20$month_reported=="2020-04-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2020-03-01" & driverdata19_20$month_reported=="2020-03-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2020-02-01" & driverdata19_20$month_reported=="2020-02-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2020-01-01" & driverdata19_20$month_reported=="2020-01-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-12-01" & driverdata19_20$month_reported=="2019-12-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-11-01" & driverdata19_20$month_reported=="2019-11-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-10-01" & driverdata19_20$month_reported=="2019-10-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-09-01" & driverdata19_20$month_reported=="2019-09-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-08-01" & driverdata19_20$month_reported=="2019-08-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-07-01" & driverdata19_20$month_reported=="2019-07-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-06-01" & driverdata19_20$month_reported=="2019-06-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-05-01" & driverdata19_20$month_reported=="2019-05-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-04-01" & driverdata19_20$month_reported=="2019-04-01"])
+table(driverdata19_20$city[driverdata19_20$driver_start_month=="2019-03-01" & driverdata19_20$month_reported=="2019-03-01"])
+
+
+
+
+
+
+
+
+
+driverdata19_20$period<- NA
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2020-06-01"] <-"1"
+
+#period - starting month
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2020-06-01"] <-"1"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2020-05-01"] <-"1"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2020-04-01"] <-"1"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2020-03-01"] <-"1"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2020-02-01"] <-"2"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2020-01-01"] <-"2"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2019-12-01"] <-"2"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2019-11-01"] <-"2"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2020-10-01"] <-"3"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2020-09-01"] <-"3"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2019-08-01"] <-"3"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2019-07-01"] <-"3"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2019-06-01"] <-"4"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2019-05-01"] <-"4"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2019-04-01"] <-"4"
+driverdata19_20$period[ driverdata19_20$driver_start_month=="2019-03-01"] <-"4"
+table(driverdata19_20$period)
+
+#period1 - duration reported months
+driverdata19_20$period1[ driverdata19_20$month_reported=="2020-06-01"] <-"1"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2020-05-01"] <-"1"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2020-04-01"] <-"1"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2020-03-01"] <-"1"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2020-02-01"] <-"2"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2020-01-01"] <-"2"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-12-01"] <-"2"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-11-01"] <-"2"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-10-01"] <-"3"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-09-01"] <-"3"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-08-01"] <-"3"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-07-01"] <-"3"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-06-01"] <-"4"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-05-01"] <-"4"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-04-01"] <-"4"
+driverdata19_20$period1[ driverdata19_20$month_reported=="2019-03-01"] <-"4"
+table(driverdata19_20$period1)
+
+#period2 - duration starting months
+driverdata19_20$period2<- 2
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2020-06-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2020-05-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2020-04-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2020-03-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2020-02-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2020-01-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-12-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-11-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-10-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-09-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-08-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-07-01"] <-"0"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-06-01"] <-"1"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-05-01"] <-"1"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-04-01"] <-"1"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-03-01"] <-"1"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-02-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-01-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-12-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-11-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-10-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-09-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-08-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-07-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-06-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-05-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-04-01"] <-"3"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-03-01"] <-"3"
+
+
+driversummary2019 <- driverdata19_20 %>%
+  group_by(period1,period2) %>%
+  summarise(mean_size = mean(number_of_trips, na.rm = TRUE))
+
+
+
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-02-01"] <-"4"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2019-01-01"] <-"5"
+driverdata19_20$period2[ driverdata19_20$driver_start_month=="2018-12-01"] <-"5"
+driverdata19_20$period2[ driverdata19_20$month_reported=="2018-11-01"] <-"5"
+driverdata19_20$period2[ driverdata19_20$month_reported=="2018-10-01"] <-"6"
+driverdata19_20$period2[ driverdata19_20$month_reported=="2018-09-01"] <-"6"
+driverdata19_20$period2[ driverdata19_20$month_reported=="2018-08-01"] <-"6"
+driverdata19_20$period2[ driverdata19_20$month_reported=="2018-07-01"] <-"6"
+driverdata19_20$period2[ driverdata19_20$month_reported=="2018-06-01"] <-"7"
+driverdata19_20$period2[ driverdata19_20$month_reported=="2018-05-01"] <-"7"
+driverdata19_20$period2[ driverdata19_20$month_reported=="2018-04-01"] <-"7"
+driverdata19_20$period2[ driverdata19_20$month_reported=="2018-03-01"] <-"7"
+
+
+
+
+
+driversummary2019 <- driverdata19_20 %>%
+  group_by(period1,period) %>%
+  summarise(mean_size = mean(number_of_trips, na.rm = TRUE))
+  
+monthly_driver_plot_title <- driverdata20 %>%
+  group_by(month_st) %>%
+  summarize(trips = sum(trips)) %>%
+  pivot_wider(everything(), names_from = "year", values_from = "trips") %>% 
+  mutate("change" = `2020`-`2019`,
+         "change_pct" = (change/`2019`),
+         "title_text" = paste0(as.character(comma(-change)), " (", percent(change_pct), ")"))
+
+
+# Restrict to comparable time periods
+yoy_period <- daily_trips %>% filter(year == max(year))
+daily_trips <- daily_trips %>% 
+  filter(day %in% yoy_period$day)
+# trips <- dbGetQuery(con, "SELECT * FROM public.trips LIMIT 100;")
+# trips <- dbReadTable(con, "public.trips")
+# Drivers
+drivers <- dbGetQuery(con, "SELECT * FROM public.drivers LIMIT 6000000;")
+# drivers <- dbReadTable(con, "public.drivers")
+# Vehicles
+vehicles <- dbGetQuery(con, "SELECT * FROM public.vehicles LIMIT 100;")
+# vehicles <- dbReadTable(con, "public.vehicles")
+```
+
+### Daily Trips
+
+```{r daily trips}
+# Plot information
+daily_trips_plot_title <- daily_trips %>%
+  group_by(year) %>%
+  summarize(trips = sum(trips)) %>%
+  pivot_wider(everything(), names_from = "year", values_from = "trips") %>% 
+  mutate("change" = `2020`-`2019`,
+         "change_pct" = (change/`2019`),
+         "title_text" = paste0(as.character(comma(-change)), " (", percent(change_pct), ")"))
+# Daily Trips YoY Plot
+daily_trips %>% 
+  mutate("year" = as.character(year)) %>% 
+  group_by(year) %>% 
+  arrange(date_x) %>%
+  mutate(trips_agg = cumsum(trips)) %>% 
+  ggplot(aes(x = date_x, y = trips_agg, color = year)) +
+  geom_line(size = 1.5) +
+  geom_vline(xintercept = as.numeric(as.Date("2000-03-21")), linetype = 4, 
+             color = "black", size = 1) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%d") +
+  scale_y_continuous(labels = comma) +
+  labs(title = paste0("Compared to the same period in 2019 (1/1-6/1), \nrideshare trips have decreased by ",
+                      daily_trips_plot_title$title_text, " in 2020"),
+       x = "Day of the Year", y = "Aggregate Trips",
+       color = "Year") +
+  scale_color_ipsum() +
+  theme_ipsum()
+# Table
+daily_trips_plot_title %>% 
+  mutate(across(c(`2019`, `2020`, change), comma),
+         "change_pct" = percent(change_pct)) %>% 
+  select(`2019`, `2020`, "Change" = change, "Change (%)" = change_pct) %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+### Spatial Distribution of Trips
+
+Example of type of analysis to be conducted
+
+```{r pickup tracts}
+# Import data
+pickup_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.pickup_tracts_comp")
+sf_tracts <- st_read(con, layer = "spatial_tracts")
+# Join tabluar to spatial, reconfigure
+pickup_tracts_comp <- left_join(sf_tracts %>% select(GEOID),
+                                pickup_tracts_comp,
+                                by = c("GEOID" = "pickup_census_tract")) %>% 
+  st_as_sf() %>% 
+  mutate("trips" = as.numeric(trips))
+# Map
+pickup_tracts_comp %>% 
+  ggplot(aes(fill = trips)) +
+  facet_wrap(~year) +
+  geom_sf(color = "light gray") +
+  coord_sf(crs = 4326) +
+  scale_fill_viridis_c(labels = comma) +
+  labs(title = "Rideshare Trips by Pickup Census Tract") +
+  theme_ipsum()
+  
+# Quantile map
+tm_shape(pickup_tracts_comp) +
+  tm_fill(col = "trips", title = "Trips",
+          style = "quantile", palette = "viridis") +
+  tm_borders() +
+  tm_facets(by = "year", nrow = 1, drop.units = TRUE) +
+  tm_layout(main.title = "Rideshare Trips by Pickup Census Tract", 
+            main.title.position = c("center"),
+            legend.outside = FALSE, 
+            legend.position = c("left", "bottom"))
+```
+
+
+# Load libraries
+pacman::p_load(tidyverse, tidycensus, sf,
+               RPostgres, RPostgreSQL, DBI,
+               config, here)
+
+# Set working directory
+setwd(here::here())
+
+# Load API keys and database connection information for project
+api_key_census <- config::get("api_key_census")
+
+
+
+# Get tabular data for Cook County tracts ---------------------------------
+
+
+# Variables 
+ref_vars <-  load_variables(year = "2018", dataset = "acs5/profile", cache = TRUE)
+
+vars <- ref_vars %>% 
+  mutate("table_name" = gsub( "_.*$", "", name),
+         "label" = gsub("!!", "; ", label)) %>% 
+  filter(str_detect(table_name,  pattern = "\\d$")) %>% 
+  select(table_name, everything())
+
+# Get Data Profiles at Tract level
+tracts_raw <- get_acs(geography = "tract",
+                      year = 2018,
+                      variables = vars %>% pull(name),
+                      survey = "acs5",
+                      state = "17", # IL FIPS 
+                      county = "031", # Cook County FIPS
+                      geometry = FALSE,
+                      wide = TRUE)
+    
+
+# Join to spatial data ----------------------------------------------------
+
+
+# Load spatial data
+# Community areas
+comm_areas_sf <- st_read("../data/shapefiles/community_areas/community_areas.shp") %>% 
+  mutate(across(where(is.factor), as.character)) %>% 
+  select("comm_area_id" = area_num_1, "comm_area_n" = area_numbe,
+         community, shape_area, shape_len) %>% 
+  mutate("comm_area_n" = as.numeric(comm_area_n))
+
+comm_areas_sf <- comm_areas_sf %>% st_transform(4326)
+
+# Tracts
+tracts_sf <- st_read("../data/shapefiles/census_tracts/census_tracts.shp") %>% 
+  mutate(across(where(is.factor), as.character)) %>% 
+  select("GEOID" = geoid10, "comm_area_id" = commarea, "comm_area_n" = commarea_n,
+         notes)
+
+tracts_sf <- tracts_sf %>% st_transform(4326)
+
+# Restrict tracts to City of Chicago
+tracts <- tracts_raw %>% 
+  semi_join(., tracts_sf, by = "GEOID") %>% 
+  left_join(., vars, by = c("variable" = "name")) %>% 
+  select(GEOID, NAME, table_name, variable, label, estimate, moe)
+    
+
+# Write to database -------------------------------------------------------
+
+
+# Connect to database
+con <- RPostgres::dbConnect(RPostgres::Postgres(), 
+                            host = config::get("host"),
+                            port = config::get("port"),
+                            dbname = config::get("dbname"),
+                            user = config::get("user"), 
+                            password = config::get("password"))
+
+# Community Areas
+dbWriteTable(conn = con,
+             name = "spatial_community_areas",
+             value = comm_areas_sf,
+             overwrite = TRUE)
+
+# Census Tracts - Spatial
+dbWriteTable(conn = con,
+             name = "spatial_tracts",
+             value = tracts_sf,
+             overwrite = TRUE)
+
+# Census Tracts - Tabluar
+dbWriteTable(conn = con,
+             name = "acs_data_profiles",
+             value = tracts,
+             overwrite = TRUE)
+             
+             
+             
