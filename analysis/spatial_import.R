@@ -6,7 +6,7 @@
 # Load libraries
 pacman::p_load(tidyverse, tidycensus, sf,
                RPostgres, RPostgreSQL, DBI,
-               config, here)
+               config, here, janitor)
 
 # Set working directory
 setwd(here::here())
@@ -18,9 +18,6 @@ api_key_census <- config::get("api_key_census")
 
 # Get tabular data for Cook County tracts ---------------------------------
 
-test <-  load_variables(year = "2019", 
-                            dataset = "acs5", 
-                            cache = TRUE)
 
 # Variables
 # Data Profiles
@@ -78,7 +75,7 @@ tracts_raw <- get_acs(geography = "tract",
 # Join to spatial data ----------------------------------------------------
 
 
-# Load spatial data
+## ----- Community areas -----
 # Community areas
 comm_areas_sf <- st_read("../data/shapefiles/community_areas/community_areas.shp") %>% 
   mutate(across(where(is.factor), as.character)) %>% 
@@ -86,14 +83,17 @@ comm_areas_sf <- st_read("../data/shapefiles/community_areas/community_areas.shp
          community, shape_area, shape_len) %>% 
   mutate("comm_area_n" = as.numeric(comm_area_n))
 
+# Transform
 comm_areas_sf <- comm_areas_sf %>% st_transform(4326)
 
+## ----- Tracts -----
 # Tracts
 tracts_sf <- st_read("../data/shapefiles/census_tracts/census_tracts.shp") %>% 
   mutate(across(where(is.factor), as.character)) %>% 
   select("GEOID" = geoid10, "comm_area_id" = commarea, "comm_area_n" = commarea_n,
          notes)
 
+# Transform
 tracts_sf <- tracts_sf %>% st_transform(4326)
 
 # Restrict tracts to City of Chicago
@@ -101,7 +101,19 @@ tracts <- tracts_raw %>%
   semi_join(., tracts_sf, by = "GEOID") %>% 
   left_join(., vars, by = c("variable" = "name")) %>% 
   select(GEOID, NAME, table_name, variable, label, estimate, moe)
-    
+  
+## ----- ZIP codes -----
+# ZIP codes
+zip_codes_sf <- st_read("../data/shapefiles/zip_codes/zip_codes.shp") %>% 
+  select("zip_code" = zip)
+
+# Transform
+zip_codes_sf <- zip_codes_sf %>% st_transform(4326)
+
+# ZIP codes COVID-19 information (cases, tests, vaccinations, etc.)
+zip_codes_covid <- read_csv("https://data.cityofchicago.org/api/views/yhhz-zm2v/rows.csv?accessType=DOWNLOAD") %>% 
+  clean_names()
+
 
 # Write to database -------------------------------------------------------
 
@@ -126,8 +138,20 @@ dbWriteTable(conn = con,
              value = tracts_sf,
              overwrite = TRUE)
 
-# Census Tracts - Tabluar
+# Census Tracts - Tabular
 dbWriteTable(conn = con,
              name = "acs_data_profiles",
              value = tracts,
+             overwrite = TRUE)
+
+# ZIP Codes - Spatial
+dbWriteTable(conn = con,
+             name = "spatial_zip_codes",
+             value = zip_codes_sf,
+             overwrite = TRUE)
+
+# Census Tracts - Spatial
+dbWriteTable(conn = con,
+             name = "zip_codes_covid",
+             value = zip_codes_covid,
              overwrite = TRUE)
