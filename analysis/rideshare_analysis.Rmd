@@ -255,7 +255,6 @@ ggplotly(gg_day_of_week_trips)
 
 ## Trip Characteristics
 
-
 ```{r trip characteristics}
 
 # Import data
@@ -613,3 +612,23 @@ tm_shape(sf_tracts) +
             scale = 2.75)
 
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Drivers
+
+
+```{r}
+
+```
+
