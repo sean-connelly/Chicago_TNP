@@ -2,7 +2,7 @@
  
 This repository contains code analyzing the impact of COVID-19 on rideshare in Chicago. The setup, ingest, and update phases are heavily reliant on Todd W Schneider's excellent work: you can see [his repo here](https://github.com/toddwschneider/chicago-taxi-data) and his corresponding [blog post here](https://toddwschneider.com/posts/chicago-taxi-data/).
 
-<span style="color:red">WARNING:</span> As of October 2020, the TNP data is ~50GB all in and the ingest process for trip data took several hours on my laptop - not for the faint of heart.
+<span style="color:red">WARNING:</span> As of May 2021, the TNP data is ~50GB all in and the ingest process for trip data took several hours on my laptop - not for the faint of heart.
 
 ### Data Sources
 

@@ -17,12 +17,12 @@ CREATE SCHEMA IF NOT EXISTS analysis;
 --Period 1
 set session my.vars.period_1_start_date = '2019-01-01';
 set session my.vars.period_1_covid_date = '2019-03-21';
-set session my.vars.period_1_end_date = '2019-09-30';
+set session my.vars.period_1_end_date = '2019-12-31';
 
 --Period 2
 set session my.vars.period_2_start_date = '2020-01-01';
 set session my.vars.period_2_covid_date = '2020-03-21';
-set session my.vars.period_2_end_date = '2020-09-30';
+set session my.vars.period_2_end_date = '2020-12-31';
 
 
 
@@ -82,6 +82,20 @@ select
 from analysis.daily_trips
 group by month
 order by month;
+
+--Hourly trips
+drop table if exists analysis.hourly_trips;
+create table analysis.hourly_trips as
+select
+year,
+covid_group,
+pickup_community_area,
+extract(hour from trip_start) as hour_of_day,
+extract(dow from trip_start) as day_of_week,
+count(*) as trips
+from analysis.base_ytd
+group by year, covid_group, hour_of_day, day_of_week
+order by year, covid_group;
 
 --TNP daily activity 
 drop table if exists analysis.tnp_daily_activity;
@@ -245,7 +259,19 @@ from analysis.base_ytd
 group by extract(year from trip_end), covid_group, dropoff_community_area, dropoff_hour, hour_of_day, day_of_week
 order by dropoff_community_area, dropoff_hour;
 
-
+--2019 vs 2020 trip patterns by community area
+drop table if exists analysis.trip_patterns_cca_comp;
+create table analysis.trip_patterns_cca_comp as
+select
+extract(year from trip_start) as year,
+covid_group,
+pickup_community_area,
+dropoff_community_area,
+count(*) as trips
+from analysis.base_ytd
+where pickup_community_area is not null
+  and dropoff_community_area is not null
+group by extract(year from trip_start), covid_group, pickup_community_area, dropoff_community_area;
 
 
 
