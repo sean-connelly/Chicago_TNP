@@ -168,6 +168,40 @@ daily_trips %>%
 
 ```
 
+### Trips Around 3/31/20 Stay-at-Home Order
+
+It is clear that behavior changed in March even before the Stay-at-Home Order, as trips per day decreased significantly after Saturday, March 14th, 2020, a full week before the Order went into effect. Note that the earlier fluctuations in January and February correspond to weekday versus weekend trips.
+
+```{r trips around stay at home plot}
+
+# Trips per day around Stay-at-Home Order
+gg_trips_per_day <- daily_trips %>%
+  filter(month(date, label = TRUE) %in% c("Feb", "Mar")) %>% 
+  group_by(year) %>% 
+  arrange(date_x) %>%
+  ggplot(aes(x = date_x, y = trips, color = as.character(year),
+             text = paste0("Date: ", paste0(format(date_x, "%m/%d"),
+                                            "/", as.character(year)),
+                           "<br>Trips: ", scales::comma(trips)))) +
+  geom_line(group = 1, size = 1.5) +
+  geom_vline(xintercept = as.numeric(as.Date("2000-03-21")), 
+             linetype = 4, color = "black", size = 1) +
+  scale_x_date(date_breaks = "1 week", 
+               date_labels = "%b-%d") +
+  scale_y_continuous(labels = comma,
+                     limits = c(0, NA)) +
+  labs(title = "Trips per Day fell before the Stay-at-Home Order went into effect,\n peaking at 365,000 trips on Saturday, March 14th, 2020",
+       x = "Day of the Year", y = "Trips per Day",
+       color = "Year") +
+  scale_color_ipsum() +
+  theme_ipsum()
+
+# Interactive plot
+ggplotly(gg_trips_per_day, tooltip = "text") %>% 
+  layout(title = list(text = "Trips per Day fell before the Stay-at-Home Order went into effect,\npeaking at 365,000 trips on Saturday, March 14th, 2020"))
+
+```
+
 ### Monthly Trips
 
 ```{r monthly trips import}
@@ -213,39 +247,6 @@ ggplotly(gg_monthly_trips, tooltip = "text") %>%
 
 ```
 
-### Trips Around 3/31/20 Stay-at-Home Order
-
-It is clear that behavior changed in March even before the Stay-at-Home Order, as trips per day decreased significantly after Saturday, March 14th, 2020, a full week before the Order went into effect. Note that the earlier fluctuations in January and February correspond to weekday versus weekend trips.
-
-```{r trips around stay at home plot}
-
-# Trips per day around Stay-at-Home Order
-gg_trips_per_day <- daily_trips %>%
-  filter(month(date, label = TRUE) %in% c("Feb", "Mar")) %>% 
-  group_by(year) %>% 
-  arrange(date_x) %>%
-  ggplot(aes(x = date_x, y = trips, color = as.character(year),
-             text = paste0("Date: ", paste0(format(date_x, "%m/%d"),
-                                            "/", as.character(year)),
-                           "<br>Trips: ", scales::comma(trips)))) +
-  geom_line(group = 1, size = 1.5) +
-  geom_vline(xintercept = as.numeric(as.Date("2000-03-21")), 
-             linetype = 4, color = "black", size = 1) +
-  scale_x_date(date_breaks = "1 week", 
-               date_labels = "%b-%d") +
-  scale_y_continuous(labels = comma,
-                     limits = c(0, NA)) +
-  labs(title = "Trips per Day fell before the Stay-at-Home Order went into effect,\n peaking at 365,000 trips on Saturday, March 14th, 2020",
-       x = "Day of the Year", y = "Trips per Day",
-       color = "Year") +
-  scale_color_ipsum() +
-  theme_ipsum()
-
-# Interactive plot
-ggplotly(gg_trips_per_day, tooltip = "text") %>% 
-  layout(title = list(text = "Trips per Day fell before the Stay-at-Home Order went into effect,\npeaking at 365,000 trips on Saturday, March 14th, 2020"))
-
-```
 
 ### Trips by Day of Week and Hour of Day
 
@@ -281,6 +282,7 @@ gg_day_of_week_trips <- daily_trips %>%
   facet_grid(covid_group ~ year) +
   scale_fill_ipsum() +
   theme_ipsum()
+
 
 # Interactive plot
 ggplotly(gg_day_of_week_trips, tooltip = "text") %>% 
@@ -321,7 +323,7 @@ gg_hour_of_day_trips <- hourly_trips %>%
   mutate("covid_group" = factor(covid_group, 
                                 levels = c("Pre-COVID", "Post-COVID"))) %>% 
   ggplot(aes(x = hour_of_day, y = trips_pct, 
-             color = as.character(year),
+             
              linetype = day_of_week,
              group = interaction(as.character(year), 
                                  day_of_week),
@@ -331,6 +333,7 @@ gg_hour_of_day_trips <- hourly_trips %>%
                            "<br>Trips: ", paste0(scales::comma(trips)),
                            " (", scales::percent(trips_pct,
                                                  accuracy = 0.1), ")"))) +
+  aes(color = as.character(year), show.guide = FALSE) +
   geom_line(size = 1.5) +
   scale_x_time(breaks = breaks_width("6 hours"), label = label_time("%l %p")) +
   scale_y_continuous(labels = percent,
@@ -343,8 +346,9 @@ gg_hour_of_day_trips <- hourly_trips %>%
   theme_ipsum()
 
 # Interactive plot
-ggplotly(gg_hour_of_day_trips, tooltip = "text") %>% 
-  layout(title = list(text = "Trips by Hour of Day (%), Pre/Post-COVID"))
+gg_hour_of_day_trips
+# ggplotly(gg_hour_of_day_trips, tooltip = "text") %>% 
+#   layout(title = list(text = "Trips by Hour of Day (%), Pre/Post-COVID"))
 
 ```
 
@@ -554,7 +558,7 @@ tm_shape(origin_tracts_comp,
          name = "Tracts") +
   tm_fill(col = "trips", title = "Trips", alpha = 0.5,
           style = "quantile", palette = "viridis") +
-  tm_borders() +
+  tm_borders(lwd = 0.5) +
   tm_facets(by = c("covid_group", "year"),
             free.coords = FALSE,
             drop.units = TRUE) +
@@ -563,7 +567,7 @@ tm_shape(origin_tracts_comp,
                                               0.80,
                                               na.rm = TRUE)),
            name = "Essential Workers") +
-  tm_borders(col = "white", lwd = 1.5) +
+  tm_borders(col = "white", lwd = 1) +
   tm_layout(main.title = "Rideshare Trips by Origin Census Tract", 
             main.title.position = c("center"),
             legend.outside = FALSE,
@@ -602,7 +606,7 @@ tm_shape(destination_tracts_comp,
          name = "Tracts") +
   tm_fill(col = "trips", title = "Trips", alpha = 0.5,
           style = "quantile", palette = "viridis") +
-  tm_borders() +
+  tm_borders(lwd = 0.5) +
   tm_facets(by = c("covid_group", "year"),
             free.coords = FALSE,
             drop.units = TRUE) +
@@ -611,7 +615,7 @@ tm_shape(destination_tracts_comp,
                                               0.80,
                                               na.rm = TRUE)),
            name = "Essential Workers") +
-  tm_borders(col = "white", lwd = 1.5) +
+  tm_borders(col = "white", lwd = 1) +
   tm_layout(main.title = "Rideshare Trips by Destination Census Tract", 
             main.title.position = c("center"),
             legend.outside = FALSE,
@@ -712,7 +716,7 @@ od_pairs_airports %>%
 
 
 
-```{r od desire lines}
+```{r od desire lines, warning=FALSE, message=FALSE}
 
 # Remove airport trips, make sure in Chicago
 # Convert into desire lines for mapping
@@ -766,7 +770,7 @@ od_pairs_restrict <- od_pairs_comp %>%
 
 # OD flows map (all tracts)
 tm_shape(sf_tracts) +
-  tm_borders() +
+  tm_borders(lwd = 0.5) +
   tm_shape(od_pairs_restrict,
            name = "OD Flows") +
   tm_lines(col = "trips", title = "Trips", 
@@ -782,7 +786,7 @@ tm_shape(sf_tracts) +
                                               0.80,
                                               na.rm = TRUE)),
            name = "Essential Workers") +
-  tm_borders(col = "black", lwd = 1.5) +
+  tm_borders(col = "black", lwd = 1) +
   tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD) Pairs\nOD Pairs with 1,000+ Trips", 
             main.title.position = c("center"),
             legend.outside = FALSE,
