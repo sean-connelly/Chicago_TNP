@@ -283,10 +283,27 @@ group by extract(year from trip_start), covid_group, pickup_community_area, drop
 
 
 
---Drivers with more than zero trips by month
-create table analysis.drivers_non_zero as
-select *
+--Drivers by month (can remove those with more than zero trips if needed)
+drop table if exists analysis.drivers;
+create table analysis.drivers as
+select
+case when (month_reported between current_setting('my.vars.period_1_covid_date')::date and
+	                               current_setting('my.vars.period_1_end_date')::date
+		   or
+		   month_reported between current_setting('my.vars.period_2_covid_date')::date and
+							       current_setting('my.vars.period_2_end_date')::date)
+	 then 'Post-COVID'
+	 else 'Pre-COVID' end as covid_group,
+date_part('year', month_reported) as year,
+case when (select date_part ('year', temp_drivers) * 12 + date_part ('month', temp_drivers) 
+ 			from age (month_reported, driver_start_month) temp_drivers) <= 3 then '0-3 months'
+     when (select date_part ('year', temp_drivers) * 12 + date_part ('month', temp_drivers) 
+ 			from age (month_reported, driver_start_month) temp_drivers) between 4 and 11 then '3-12 months'
+ 	 when (select date_part ('year', temp_drivers) * 12 + date_part ('month', temp_drivers) 
+ 			from age (month_reported, driver_start_month) temp_drivers) >= 12 then 'Over a Year'
+	end as driver_tenure,
+*
 from public.drivers
-where number_of_trips > 0
+
 
 

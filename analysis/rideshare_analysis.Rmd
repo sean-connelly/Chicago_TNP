@@ -33,11 +33,7 @@ tmap_options(basemaps = c(OSM = "OpenStreetMap",
 
 ```
 
-## Rideshare Data
-
-This analysis relies on Transportation Network Provider (TNP) data for trips, drivers, and vehicles. These datasets are published on the City of Chicago's Data Portal and updated quarterly. Please see the [GitHub repository](https://github.com/sean-connelly/Chicago_TNP) for source links and download instructions.
-
-```{r import data}
+```{r base data import}
 
 # Connect to database
 con <- RPostgres::dbConnect(RPostgres::Postgres(), 
@@ -64,10 +60,6 @@ con <- RPostgres::dbConnect(RPostgres::Postgres(),
 
 ```
 
-## Trips Over Time
-
-### Daily Trips
-
 ```{r daily trips import}
 
 # Import data
@@ -88,7 +80,7 @@ daily_trips <- daily_trips %>%
 
 
 
-```{r daily trips plot}
+```{r daily trips ggplot}
 
 # Plot information
 daily_trips_plot_title <- daily_trips %>%
@@ -124,25 +116,12 @@ gg_daily_trips <- daily_trips %>%
   scale_color_ipsum() +
   theme_ipsum()
 
-# Interactive plot
-ggplotly(gg_daily_trips, tooltip = "text") %>% 
-  layout(title = list(text =  paste0("Compared to 2019, rideshare trips decreased by ", daily_trips_plot_title$title_text, " in 2020")))
-
 ```
 
-**This analysis uses the day that Governor Pritzker's Stay-at-Home Order went into effect (March 21st), as a way to delineate between two time frames:**
-
-- **"Pre-COVID" (1/1-3/21) and **
-- **"Post-COVID" (3/21-12/31)**
-
-**As the data below suggest, the use of a single date to mark the onset of the pandemic is an oversimplification, but this allows for a clean comparison of rideshare trends year-over-year.** 
-
-Prior to the Stay-at-Home Order going into effect, trips were already down by about 7 percent year-over-year. However, the bulk of the decline in rideshare occurred after the during the following 9 months. From late March 2020 onwards, only 27 million rideshare trips were taken in Chicago, about 60 million fewer trips compared to the same period in 2019.
-
-```{r daily trips table}
+```{r daily trips kable data}
 
 # Pre/Post COVID table
-daily_trips %>%
+daily_trips_table <- daily_trips %>%
   mutate("covid_group" = ifelse(date_x >= "2000-03-21", 
                                 "Post-COVID (3/21-12/31)", 
                                 "Pre-COVID (1/1-3/21)")) %>% 
@@ -160,19 +139,11 @@ daily_trips %>%
   mutate(across(c(`2019`, `2020`, change), comma),
          "change_pct" = percent(change_pct)) %>% 
   select("Period" = covid_group, `2019`, `2020`, 
-         "Change" = change, "Change (%)" = change_pct) %>% 
-  kbl() %>% 
-  row_spec(3, bold = TRUE) %>% 
-  kable_styling(bootstrap_options = c("striped", "hover", 
-                                      "condensed", "responsive"))
+         "Change" = change, "Change (%)" = change_pct)
 
 ```
 
-### Trips Around 3/31/20 Stay-at-Home Order
-
-It is clear that behavior changed in March even before the Stay-at-Home Order, as trips per day decreased significantly after Saturday, March 14th, 2020, a full week before the Order went into effect. Note that the earlier fluctuations in January and February correspond to weekday versus weekend trips.
-
-```{r trips around stay at home plot}
+```{r trips around stay at home ggplot}
 
 # Trips per day around Stay-at-Home Order
 gg_trips_per_day <- daily_trips %>%
@@ -196,13 +167,7 @@ gg_trips_per_day <- daily_trips %>%
   scale_color_ipsum() +
   theme_ipsum()
 
-# Interactive plot
-ggplotly(gg_trips_per_day, tooltip = "text") %>% 
-  layout(title = list(text = "Trips per Day fell before the Stay-at-Home Order went into effect,\npeaking at 365,000 trips on Saturday, March 14th, 2020"))
-
 ```
-
-### Monthly Trips
 
 ```{r monthly trips import}
 
@@ -221,9 +186,7 @@ monthly_trips <- monthly_trips %>%
 
 ```
 
-Taking a step back to examine trips per month, rideshare trips reached a low of 1.5 million in April. While trips rebounded in the following months, averaging around 3.6 million from July through October, they fell again in November and December as the country was entering the third wave of the pandemic.
-
-```{r monthly trips}
+```{r monthly trips ggplot}
 
 # Monthly trips YoY plot
 gg_monthly_trips <- monthly_trips %>% 
@@ -241,27 +204,18 @@ gg_monthly_trips <- monthly_trips %>%
   scale_fill_ipsum() +
   theme_ipsum()
 
-# Interactive plot
-ggplotly(gg_monthly_trips, tooltip = "text") %>% 
-  layout(title = list(text = "Trips per Month declined significantly in March, bottoming out at 1.5M in April.\nHowever, rideshare trips rebounded to 3.6M in the fall."))
-
 ```
 
-
-### Trips by Day of Week and Hour of Day
-
-#### Day of Week
-
-While the number of trips were down significantly in 2020 from April to December compared to the same period in 2019, rideshare trips by day exhibited the same period across years and times periods; relatively low Monday through Wednesday before rising into the weekend and peaking Saturday.
-
-```{r day of week trips plot}
+```{r day of week trips ggplot}
 
 # Day of week YoY plot
 gg_day_of_week_trips <- daily_trips %>%
   mutate("covid_group" = ifelse(date_x >= "2000-03-21", 
-                                "Post-COVID", "Pre-COVID")) %>% 
+                                "Post-COVID", 
+                                "Pre-COVID")) %>% 
   mutate("covid_group" = factor(covid_group, 
-                                levels = c("Pre-COVID", "Post-COVID"))) %>% 
+                                levels = c("Pre-COVID", 
+                                           "Post-COVID"))) %>% 
   group_by(covid_group, year, weekday) %>%
   summarize("trips" = sum(trips)) %>%
   ungroup(weekday) %>%
@@ -283,14 +237,7 @@ gg_day_of_week_trips <- daily_trips %>%
   scale_fill_ipsum() +
   theme_ipsum()
 
-
-# Interactive plot
-ggplotly(gg_day_of_week_trips, tooltip = "text") %>% 
-  layout(title = list(text = "Trips by Day of Week (%), Pre/Post-COVID"))
-
 ```
-
-
 
 ```{r hour of day trips import}
 
@@ -312,16 +259,13 @@ hourly_trips <- hourly_trips %>%
 
 ```
 
-#### Hour of Day
-
-Breaking out trips by hour of the day, it is clear that trips were shifted over time after the Stay-at-Home order went into effect. Weekend trips by hour (dashed line) still exhibited a late night surge, but the twin peaks of the morning and evening rush during weekdays (solid line) are less noticeable. It is clear that a higher proportion of weekday trips took place during the late afternoon hours compared to the same Post-COVID period in 2019. 
-
-```{r hour of day trips plot}
+```{r hour of day trips interactive plot}
 
 # Hour of Day YoY plot
 gg_hour_of_day_trips <- hourly_trips %>%
   mutate("covid_group" = factor(covid_group, 
-                                levels = c("Pre-COVID", "Post-COVID"))) %>% 
+                                levels = c("Pre-COVID", 
+                                           "Post-COVID"))) %>% 
   ggplot(aes(x = hour_of_day, y = trips_pct, 
              
              linetype = day_of_week,
@@ -345,16 +289,9 @@ gg_hour_of_day_trips <- hourly_trips %>%
   scale_fill_ipsum() +
   theme_ipsum()
 
-# Interactive plot
-gg_hour_of_day_trips
-# ggplotly(gg_hour_of_day_trips, tooltip = "text") %>% 
-#   layout(title = list(text = "Trips by Hour of Day (%), Pre/Post-COVID"))
-
 ```
 
-## Trip Characteristics
-
-```{r trip characteristics}
+```{r trip characteristics import}
 
 # Import data
 trip_chars_avg <- dbGetQuery(con, "SELECT * FROM analysis.tnp_trip_chars") %>% 
@@ -365,15 +302,11 @@ trip_chars_avg <- dbGetQuery(con, "SELECT * FROM analysis.tnp_trip_chars") %>%
 
 ```
 
-### Distance
-
-Prior to the Stay-at-Home Order going into effect, trips were 6.4 miles long on average, a 9 percent increase year-over-year. From late March 2020 onwards, however, the average trip distance increased to only slightly to 6.5 miles, a 1.7% increase compared to the same period in 2019.
-
-```{r distance}
+```{r distance kable data}
 
 # Average distance
 # Pre/Post COVID table
-trip_chars_avg %>%
+trip_chars_distance <- trip_chars_avg %>%
   select(covid_group, year, trip_miles) %>% 
   pivot_wider(names_from = "year", 
               values_from = "trip_miles") %>% 
@@ -382,22 +315,15 @@ trip_chars_avg %>%
   mutate(across(c(`2019`, `2020`, change), comma),
          "change_pct" = percent(change_pct)) %>% 
   select("Period" = covid_group, `2019`, `2020`, 
-         "Change" = change, "Change (%)" = change_pct) %>% 
-  kbl(caption = "Average Trip Distance (Mi.)") %>% 
-  kable_styling(bootstrap_options = c("striped", "hover", 
-                                      "condensed", "responsive"))
+         "Change" = change, "Change (%)" = change_pct)
 
 ```
 
-### Time
-
-While average trip distance increased slightly, the average trip duration fell significantly in 2020. After March 21, 2020, the average trip time was 15.9 minutes, a 15% decrease compared to the same period in 2019. This finding aligns with Manzo and Bruno's [analysis based on a sample of trips from September 2019 and September 2020](https://illinoisepi.files.wordpress.com/2021/01/ilepi-pmcr-on-demand-workers-sub-minimum-wages-final.pdf) which found a 16% decline in average trip duration due to a decrease in congestion.
-
-```{r time}
+```{r duration kable data}
 
 # Average time - minutes
 # Pre/Post COVID table
-trip_chars_avg %>%
+trip_chars_duration <- trip_chars_avg %>%
   mutate("trip_minutes" = trip_seconds / 60) %>% 
   select(covid_group, year, trip_minutes) %>% 
   pivot_wider(names_from = "year", 
@@ -407,23 +333,17 @@ trip_chars_avg %>%
   mutate(across(c(`2019`, `2020`, change), comma),
          "change_pct" = percent(change_pct)) %>% 
   select("Period" = covid_group, `2019`, `2020`, 
-         "Change" = change, "Change (%)" = change_pct) %>% 
-  kbl(caption = "Average Trip Duration (Min.)") %>% 
-  kable_styling(bootstrap_options = c("striped", "hover", 
-                                      "condensed", "responsive"))
+         "Change" = change, "Change (%)" = change_pct)
 
 ```
 
-### Fares
-
-The average trip fare in 2020 was about $0.80 higher in the first three months of the year compared to the same period in 2019, a 7.4% increase. However, in the period after the Stay-at-Home Order went into effect, the average trip fare in 2020 was about the same as in 2019.
-
-```{r fares, warning=FALSE}
+```{r fares import}
 
 # Import data
 fares <- dbGetQuery(con, "SELECT * FROM analysis.tnp_fares") %>% 
   mutate("covid_group" = factor(covid_group, 
-                                levels = c("Pre-COVID", "Post-COVID")),
+                                levels = c("Pre-COVID", 
+                                           "Post-COVID")),
          "trips" = as.numeric(trips))
 
 # Distribution of fares
@@ -442,22 +362,10 @@ fares_tail <- fares_pct %>%
   slice(1) %>% 
   ungroup()
 
-# Average fares
-# Pre/Post COVID table
-trip_chars_avg %>%
-  select(covid_group, year, fare) %>% 
-  pivot_wider(names_from = "year", 
-              values_from = "fare") %>% 
-  mutate("change" = `2020`-`2019`,
-         "change_pct" = (change/`2019`)) %>% 
-  mutate(across(c(`2019`, `2020`, change), dollar),
-         "change_pct" = percent(change_pct)) %>% 
-  select("Period" = covid_group, `2019`, `2020`, 
-         "Change" = change, "Change (%)" = change_pct) %>% 
-  kbl(caption = "Average Trip Fare ($)") %>% 
-  kable_styling(bootstrap_options = c("striped", "hover", 
-                                      "condensed", "responsive"))
-  
+```
+
+```{r fares ggplot}
+
 # Histogram
 gg_fares <- fares %>%
   ggplot(aes(x = fare, y = trips, fill = as.character(year),
@@ -467,6 +375,7 @@ gg_fares <- fares %>%
   geom_vline(data = trip_chars_avg, 
              mapping = aes(xintercept = fare),
              linetype = "dashed", size = 1) +
+  # Set limit to ~$30 to eliminate long tail and focus on bulk of trips
   scale_x_continuous(labels = dollar_format(prefix = "$"),
                      limits = c(0, max(fares_tail$fare))) +
   scale_y_continuous(labels = comma) +
@@ -478,57 +387,94 @@ gg_fares <- fares %>%
   scale_fill_ipsum() +
   theme_ipsum()
 
-# Interactive plot
-ggplotly(gg_fares, tooltip = "text") %>% 
-  layout(title = list(text = paste0("Fare Distribution to the Nearest $2.50, Pre/Post-COVID", 
-                                    "<br>",
-                                    "<sup>",
-                                    "95% of trip fares were less than $30 in each period","</sup>")))
+```
+
+```{r fares kable data}
+
+# Average fares
+# Pre/Post COVID table
+trip_chars_fares <- trip_chars_avg %>%
+  select(covid_group, year, fare) %>% 
+  pivot_wider(names_from = "year", 
+              values_from = "fare") %>% 
+  mutate("change" = `2020`-`2019`,
+         "change_pct" = (change/`2019`)) %>% 
+  mutate(across(c(`2019`, `2020`, change), dollar),
+         "change_pct" = percent(change_pct)) %>% 
+  select("Period" = covid_group, `2019`, `2020`, 
+         "Change" = change, "Change (%)" = change_pct)
 
 ```
 
-## Spatial Distribution of Trips
-
-### Origin
-
-```{r origin tracts data import}
+```{r origin-destination tracts import}
 
 # Import data
 origin_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.pickup_tracts_comp")
+destination_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.dropoff_tracts_comp")
 sf_tracts <- st_read(con, layer = "spatial_tracts")
 acs_data_profiles <- dbGetQuery(con, "SELECT * FROM public.acs_data_profiles")
 
 # Join trip data to spatial, reconfigure
-origin_tracts_comp <- left_join(sf_tracts %>% select(GEOID),
-                                origin_tracts_comp,
-                                by = c("GEOID" = "pickup_census_tract")) %>% 
+# Origin-Destination
+od_tracts_comp <- 
+  # Origin and Destination
+  full_join(origin_tracts_comp %>% 
+              rename("origin_trips" = trips),
+            destination_tracts_comp %>%
+              rename("destination_trips" = trips),
+            by = c("pickup_census_tract" = "dropoff_census_tract",
+                   "year" = "year",
+                   "covid_group" = "covid_group")) %>% 
+  select("GEOID" = pickup_census_tract, year, covid_group,
+         origin_trips, destination_trips) %>% 
+  # Join to spatial data
+  left_join(sf_tracts %>% select(GEOID),
+            .,
+            by = "GEOID") %>% 
+  # Reconfigure and format
   st_as_sf() %>% 
-  mutate("trips" = as.numeric(trips),
+  mutate("origin_trips" = as.numeric(origin_trips),
+         "destination_trips" = as.numeric(destination_trips),
          "covid_group" = factor(covid_group, 
-                                levels = c("Pre-COVID", "Post-COVID"))) %>% 
-  arrange(covid_group, GEOID)
+                                levels = c("Pre-COVID",
+                                           "Post-COVID"))) %>% 
+  arrange(GEOID, year, covid_group)
+
+```
+
+```{r essential workers definition}
 
 # Create essential worker definition
 # National averages:
 #     -Essential: 23.8%
 #     -Healthcare: 9.5%
-# Tract averages:
-#     -Essential: 418 (26.5%)
-#     -Healthcare: 148 (9.1%)
+# City of Chicago:
+#     -Essential: 334,381 (24.5%)
+#     -Healthcare: 118,787 (8.7%)
 # Tract median (50th):
-#     -Essential: 353 (26.1%)
-#     -Healthcare: 115 (8.1%)
-# Tract first quintile (80th):
-#     -Essential: 610 (33.9%)
-#     -Healthcare: 214 (12.6%)
-acs_data_profiles <- acs_data_profiles %>% 
+# Share of city employment in occupation
+#     -Essential: 353 (0.11%)
+#     -Healthcare: 115 (0.10%)
+# Tract top 20 percent, first quintile (80th):
+# Share of city employment in occupation
+#     -Essential: 610 (0.18%), combined 136,540 (40.8%)
+#     -Healthcare: 214 (0.18%), combined 55,398 (46.6%)
+
+# Chicago 
+acs_data_chi <- acs_data_profiles %>% 
   filter(table_name == "S2401") %>% 
   select(GEOID, variable, estimate) %>% 
   pivot_wider(names_from = "variable",
-              values_from = "estimate") %>% 
+              values_from = "estimate") %>%
+  select(-GEOID) %>% 
+  summarize(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>% 
   mutate("essential" = select(., S2401_C01_015:S2401_C01_025) %>% 
            rowSums(na.rm = TRUE),
          "essential_pct" = essential / S2401_C01_001,
+         "essential_non_police_fire" = select(., S2401_C01_015:S2401_C01_025,
+                                              -S2401_C01_020) %>% 
+           rowSums(na.rm = TRUE),
+         "essential_non_police_fire_pct" = essential_non_police_fire / S2401_C01_001,
          "health_all" = select(., S2401_C01_015:S2401_C01_019) %>% 
            rowSums(na.rm = TRUE),
          "health_all_pct" = health_all / S2401_C01_001) %>% 
@@ -540,94 +486,81 @@ acs_data_profiles <- acs_data_profiles %>%
          "custodial" = S2401_C01_024,
          "personal_service" = S2401_C01_025)
 
+# Tract level, calculate share of city employment by occupation
+acs_data_tracts <- acs_data_profiles %>% 
+  filter(table_name == "S2401") %>% 
+  select(GEOID, variable, estimate) %>% 
+  pivot_wider(names_from = "variable",
+              values_from = "estimate") %>% 
+  mutate("essential" = select(., S2401_C01_015:S2401_C01_025) %>% 
+           rowSums(na.rm = TRUE),
+         "essential_share_chi_pct" = essential / acs_data_chi$essential,
+         "essential_non_police_fire" = select(., S2401_C01_015:S2401_C01_025,
+                                              -S2401_C01_020) %>% 
+           rowSums(na.rm = TRUE),
+         "essential_non_police_fire_pct" = essential_non_police_fire / acs_data_chi$essential_non_police_fire,
+         "health_all" = select(., S2401_C01_015:S2401_C01_019) %>% 
+           rowSums(na.rm = TRUE),
+         "health_all_share_chi_pct" = health_all / acs_data_chi$health_all) %>%
+  
+  rename("total" = S2401_C01_001,
+         "health_pract" = S2401_C01_015,
+         "health_support" = S2401_C01_019,
+         "police_fire" = S2401_C01_020,
+         "food_service" = S2401_C01_023,
+         "custodial" = S2401_C01_024,
+         "personal_service" = S2401_C01_025)
+
 # Essential workers by tract
 essential_workers_sf <- left_join(sf_tracts %>% select(GEOID),
-                                acs_data_profiles,
-                                by = "GEOID")
+                                  acs_data_tracts,
+                                  by = "GEOID")
 
 ```
 
-In the Pre-COVID period (1/1-3/21) the spatial distribution of rideshare pickups and dropoffs in 2019 and 2020 were very similar. After the Stay-at-Home Order went into effect, however, trips cratered, particularly those originating on the South, West, and Northwest Sides. Even the core area of high trip activity, roughly comprising the Loop and the North Side, shrunk in size.
+```{r origin-destination tracts tmap data, warning=FALSE}
 
-**Census tracts where more than 33% of workers are essential are outlined in white, comprising the top 20 percent of tracts in the city. "Essential workers" are defined as: healthcare practitioners and technical occupations; healthcare support occupations; protective service occupations; food preparation and serving related occupations; building and grounds cleaning and maintenance occupations; and personal care and service occupations.** Neighborhoods with a high concentration of essential workers, especially those on the South and West Sides, saw a large decrease in trip dropoffs and pickups. 
-
-```{r origin tracts map, fig.asp=1.75}
-
-# Quantile map
-tm_shape(origin_tracts_comp,
-         name = "Tracts") +
-  tm_fill(col = "trips", title = "Trips", alpha = 0.5,
-          style = "quantile", palette = "viridis") +
+# Quantile map, origin
+tmap_od_tracts_comp <-
+  # Origin
+  tm_shape(od_tracts_comp, name = "Origin") +
+  tm_fill(col = "origin_trips", title = "Origin Trips",
+          alpha = 0.5, style = "quantile", 
+          palette = "viridis") +
   tm_borders(lwd = 0.5) +
   tm_facets(by = c("covid_group", "year"),
             free.coords = FALSE,
             drop.units = TRUE) +
+  # Destination
+  tm_shape(od_tracts_comp, name = "Destination") +
+  tm_fill(col = "destination_trips", title = "Destination Trips",
+          alpha = 0.5, style = "quantile", 
+          palette = "viridis") +
+  tm_borders(lwd = 0.5) +
+  tm_facets(by = c("covid_group", "year"),
+            free.coords = FALSE,
+            drop.units = TRUE) +
+  # Essential workers, non-police/fire, top 20%
   tm_shape(essential_workers_sf %>% 
-             filter(essential_pct >= quantile(essential_pct,
-                                              0.80,
-                                              na.rm = TRUE)),
-           name = "Essential Workers") +
+             filter(essential_non_police_fire_pct >= 
+                      quantile(essential_non_police_fire_pct,
+                               0.80,
+                               na.rm = TRUE)),
+           name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
   tm_borders(col = "white", lwd = 1) +
-  tm_layout(main.title = "Rideshare Trips by Origin Census Tract", 
+  # Layout
+  tm_layout(main.title = "Rideshare Trips by Census Tract", 
             main.title.position = c("center"),
-            legend.outside = FALSE,
-            legend.width = 1.5,
+            legend.outside = TRUE,
+            legend.outside.size = 1.5,
             scale = 2.75) +
   tm_view(view.legend.position = c("left", "bottom"))
 
 ```
 
-### Destinations
-
-```{r destination tracts data import}
-
-# Import data
-destination_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.dropoff_tracts_comp")
-
-# Join tabular to spatial, reconfigure
-destination_tracts_comp <- left_join(sf_tracts %>% select(GEOID),
-                                     destination_tracts_comp,
-                                     by = c("GEOID" = "dropoff_census_tract")) %>% 
-  st_as_sf() %>% 
-  mutate("trips" = as.numeric(trips),
-         "covid_group" = factor(covid_group, 
-                                levels = c("Pre-COVID", 
-                                           "Post-COVID"))) %>% 
-  arrange(covid_group, GEOID)
-
-```
 
 
-
-```{r destination tracts map, fig.asp=1.75}
-
-# Quantile map
-tm_shape(destination_tracts_comp,
-         name = "Tracts") +
-  tm_fill(col = "trips", title = "Trips", alpha = 0.5,
-          style = "quantile", palette = "viridis") +
-  tm_borders(lwd = 0.5) +
-  tm_facets(by = c("covid_group", "year"),
-            free.coords = FALSE,
-            drop.units = TRUE) +
-  tm_shape(essential_workers_sf %>% 
-             filter(essential_pct >= quantile(essential_pct,
-                                              0.80,
-                                              na.rm = TRUE)),
-           name = "Essential Workers") +
-  tm_borders(col = "white", lwd = 1) +
-  tm_layout(main.title = "Rideshare Trips by Destination Census Tract", 
-            main.title.position = c("center"),
-            legend.outside = FALSE,
-            legend.width = 1.5,
-            scale = 2.75) +
-  tm_view(view.legend.position = c("left", "bottom"))
-
-```
-
-### Origin-Destination (OD) Flows
-
-```{r od tracts data import, warning=FALSE, message=FALSE}
+```{r origin-destination flows import, warning=FALSE, message=FALSE}
 
 # Import data
 od_pairs_raw <- dbGetQuery(con, "SELECT * FROM analysis.trip_patterns_tracts_comp") %>% 
@@ -648,6 +581,194 @@ od_pairs_intra_inter <- od_pairs_raw %>%
   ungroup()
 
 ```
+
+
+
+
+
+
+
+
+## Executive Summary
+
+## Rideshare Data
+
+This analysis relies on Transportation Network Provider (TNP) data for trips, drivers, and vehicles. These datasets are published on the City of Chicago's Data Portal and updated quarterly. Please see the [GitHub repository](https://github.com/sean-connelly/Chicago_TNP) for source links and download instructions.
+
+## Trips Over Time
+
+### Daily Trips
+
+```{r daily trips interactive plot}
+
+# Interactive plot
+ggplotly(gg_daily_trips, tooltip = "text") %>% 
+  layout(title = list(text =  paste0(
+    "Compared to 2019, rideshare trips decreased by ",
+    daily_trips_plot_title$title_text, " in 2020")))
+
+```
+
+**This analysis uses the day that Governor Pritzker's Stay-at-Home Order went into effect (March 21st), as a way to delineate between two time frames:**
+
+- **"Pre-COVID" (1/1-3/21) and **
+- **"Post-COVID" (3/21-12/31)**
+
+**As the data below suggest, the use of a single date to mark the onset of the pandemic is an oversimplification, but this allows for a clean comparison of rideshare trends year-over-year.** 
+
+Prior to the Stay-at-Home Order going into effect, trips were already down by about 7 percent year-over-year. However, the bulk of the decline in rideshare occurred after the during the following 9 months. From late March 2020 onwards, only 27 million rideshare trips were taken in Chicago, about 60 million fewer trips compared to the same period in 2019.
+
+```{r daily trips kable}
+
+# Pre/Post COVID table
+daily_trips_table %>%
+  kbl() %>% 
+  row_spec(3, bold = TRUE) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", 
+                                      "condensed", "responsive"))
+
+```
+
+### Trips Around 3/21/20 Stay-at-Home Order
+
+It is clear that behavior changed in March even before the Stay-at-Home Order, as trips per day decreased significantly after Saturday, March 14th, 2020, a full week before the Order went into effect. Note that the earlier fluctuations in January and February correspond to weekday versus weekend trips.
+
+```{r trips around stay at home interactive plot}
+
+# Interactive plot
+ggplotly(gg_trips_per_day, tooltip = "text") %>% 
+  layout(title = list(text = "Trips per Day fell before the Stay-at-Home Order went into effect,\npeaking at 365,000 trips on Saturday, March 14th, 2020"))
+
+```
+
+### Monthly Trips
+
+```{r monthly trips interactive plot}
+
+# Interactive plot
+ggplotly(gg_monthly_trips, tooltip = "text") %>% 
+  layout(title = list(text = "Trips per Month declined significantly in March, bottoming out at 1.5M in April.\nHowever, rideshare trips rebounded to 3.6M in the fall."))
+
+```
+
+### Trips by Day of Week and Hour of Day
+
+#### Day of Week
+
+While the number of trips were down significantly in 2020 from April to December compared to the same period in 2019, rideshare trips by day exhibited the same period across years and times periods; relatively low Monday through Wednesday before rising into the weekend and peaking Saturday.
+
+```{r day of week trips interactive plot}
+
+# Interactive plot
+ggplotly(gg_day_of_week_trips, tooltip = "text") %>% 
+  layout(title = list(text = "Trips by Day of Week (%), Pre/Post-COVID"))
+
+```
+
+#### Hour of Day
+
+Breaking out trips by hour of the day, it is clear that trips were shifted over time after the Stay-at-Home order went into effect. Weekend trips by hour (dashed line) still exhibited a late night surge, but the twin peaks of the morning and evening rush during weekdays (solid line) are less noticeable. It is clear that a higher proportion of weekday trips took place during the late afternoon hours compared to the same Post-COVID period in 2019. 
+
+```{r hour of day trips interactive plot}
+
+# Interactive plot
+#gg_hour_of_day_trips
+ggplotly(gg_hour_of_day_trips, tooltip = "text") %>%
+  layout(title = list(text = "Trips by Hour of Day (%), Pre/Post-COVID"))
+
+```
+
+## Trip Characteristics
+
+### Distance
+
+Prior to the Stay-at-Home Order going into effect, trips were 6.4 miles long on average, a 9 percent increase year-over-year. From late March 2020 onwards, however, the average trip distance increased to only slightly to 6.5 miles, a 1.7% increase compared to the same period in 2019.
+
+```{r distance kable}
+
+# Average distance - miles
+# Pre/Post COVID table
+trip_chars_distance %>% 
+  kbl(caption = "Average Trip Distance (Mi.)") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", 
+                                      "condensed", "responsive"))
+
+```
+
+### Duration
+
+While average trip distance increased slightly, the average trip duration fell significantly in 2020. After March 21, 2020, the average trip time was 15.9 minutes, a 15% decrease compared to the same period in 2019. This finding aligns with Manzo and Bruno's [analysis based on a sample of trips from September 2019 and September 2020](https://illinoisepi.files.wordpress.com/2021/01/ilepi-pmcr-on-demand-workers-sub-minimum-wages-final.pdf) which found a 16% decline in average trip duration due to a decrease in congestion.
+
+```{r duration kable}
+
+# Average duration - minutes
+# Pre/Post COVID table
+trip_chars_duration %>% 
+  kbl(caption = "Average Trip Duration (Min.)") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", 
+                                      "condensed", "responsive"))
+
+```
+
+### Fares
+
+The average trip fare in 2020 was about $0.80 higher in the first three months of the year compared to the same period in 2019, a 7.4% increase. However, in the period after the Stay-at-Home Order went into effect, the average trip fare in 2020 was about the same as in 2019.
+
+```{r fares kable}
+
+# Average fares
+# Pre/Post COVID table
+trip_chars_fares %>% 
+  kbl(caption = "Average Trip Fare ($)") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", 
+                                      "condensed", "responsive"))
+
+```
+
+```{r fares interactive plot}
+
+# Interactive plot
+ggplotly(gg_fares, tooltip = "text") %>% 
+  layout(title = list(text = paste0("Fare Distribution to the Nearest $2.50, Pre/Post-COVID", 
+                                    "<br>",
+                                    "<sup>",
+                                    "95% of trip fares were less than $30 in each period","</sup>")))
+
+```
+
+## Spatial Distribution of Trips
+
+### Origin/Destination
+
+In the Pre-COVID period (1/1-3/21) the spatial distribution of rideshare pickups and dropoffs in 2019 and 2020 were very similar. After the Stay-at-Home Order went into effect, however, trips cratered, particularly those originating on the South, West, and Northwest Sides. Even the core area of high trip activity, roughly comprising the Loop and the North Side, shrunk in size.
+
+**Census tracts where more than 33% of workers are essential are outlined in white, comprising the top 20 percent of tracts in the city. "Essential workers" are defined as: healthcare practitioners and technical occupations; healthcare support occupations; protective service occupations; food preparation and serving related occupations; building and grounds cleaning and maintenance occupations; and personal care and service occupations.** Neighborhoods with a high concentration of essential workers, especially those on the South and West Sides, saw a large decrease in trip dropoffs and pickups. 
+
+```{r origin-destination tracts tmaps, fig.asp=1.75}
+
+# Create essential worker definition
+# National averages:
+#     -Essential: 23.8%
+#     -Healthcare: 9.5%
+# City of Chicago:
+#     -Essential: 334,381 (24.5%)
+#     -Healthcare: 118,787 (8.7%)
+# Tract median (50th):
+# Share of city employment in occupation
+#     -Essential: 353 (0.11%)
+#     -Healthcare: 115 (0.10%)
+# Tract top 20 percent, first quintile (80th):
+# Share of city employment in occupation
+#     -Essential: 610 (0.18%), combined 136,540 (40.8%)
+#     -Healthcare: 214 (0.18%), combined 55,398 (46.6%)
+
+# Quantile map
+tmap_origin_tracts_comp
+tmap_destination_tracts_comp
+
+```
+
+### Origin-Destination (OD) Flows
 
 #### Flow Types
 
@@ -796,12 +917,11 @@ tm_shape(sf_tracts) +
 
 ```
 
+## Drivers
 
 
 
-
-
-```{r}
+```{r, driver}
 ## Drivers
 ```
 
