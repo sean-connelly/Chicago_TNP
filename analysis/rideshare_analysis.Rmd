@@ -259,7 +259,7 @@ hourly_trips <- hourly_trips %>%
 
 ```
 
-```{r hour of day trips interactive plot}
+```{r hour of day trips ggplot}
 
 # Hour of Day YoY plot
 gg_hour_of_day_trips <- hourly_trips %>%
@@ -296,7 +296,8 @@ gg_hour_of_day_trips <- hourly_trips %>%
 # Import data
 trip_chars_avg <- dbGetQuery(con, "SELECT * FROM analysis.tnp_trip_chars") %>% 
   mutate("covid_group" = factor(covid_group, 
-                                levels = c("Pre-COVID", "Post-COVID")),
+                                levels = c("Pre-COVID", 
+                                           "Post-COVID")),
          "trips" = as.numeric(trips)) %>% 
   arrange(covid_group, year)
 
@@ -406,39 +407,13 @@ trip_chars_fares <- trip_chars_avg %>%
 
 ```
 
-```{r origin-destination tracts import}
+```{r od spatial import}
 
 # Import data
 origin_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.pickup_tracts_comp")
 destination_tracts_comp <- dbGetQuery(con, "SELECT * FROM analysis.dropoff_tracts_comp")
 sf_tracts <- st_read(con, layer = "spatial_tracts")
-acs_data_profiles <- dbGetQuery(con, "SELECT * FROM public.acs_data_profiles")
-
-# Join trip data to spatial, reconfigure
-# Origin-Destination
-od_tracts_comp <- 
-  # Origin and Destination
-  full_join(origin_tracts_comp %>% 
-              rename("origin_trips" = trips),
-            destination_tracts_comp %>%
-              rename("destination_trips" = trips),
-            by = c("pickup_census_tract" = "dropoff_census_tract",
-                   "year" = "year",
-                   "covid_group" = "covid_group")) %>% 
-  select("GEOID" = pickup_census_tract, year, covid_group,
-         origin_trips, destination_trips) %>% 
-  # Join to spatial data
-  left_join(sf_tracts %>% select(GEOID),
-            .,
-            by = "GEOID") %>% 
-  # Reconfigure and format
-  st_as_sf() %>% 
-  mutate("origin_trips" = as.numeric(origin_trips),
-         "destination_trips" = as.numeric(destination_trips),
-         "covid_group" = factor(covid_group, 
-                                levels = c("Pre-COVID",
-                                           "Post-COVID"))) %>% 
-  arrange(GEOID, year, covid_group)
+sf_ccas <- st_read(con, layer = "spatial_community_areas")
 
 ```
 
@@ -450,15 +425,21 @@ od_tracts_comp <-
 #     -Healthcare: 9.5%
 # City of Chicago:
 #     -Essential: 334,381 (24.5%)
+#     -Essential Non Police/Fire: 293,575 (21.5%)
 #     -Healthcare: 118,787 (8.7%)
 # Tract median (50th):
 # Share of city employment in occupation
 #     -Essential: 353 (0.11%)
+#     -Essential Non Police/Fire: 314 (0.11%)
 #     -Healthcare: 115 (0.10%)
 # Tract top 20 percent, first quintile (80th):
 # Share of city employment in occupation
 #     -Essential: 610 (0.18%), combined 136,540 (40.8%)
+#     -Essential Non Police/Fire: 532 (0.18%), combined 121,060 (41.5%)
 #     -Healthcare: 214 (0.18%), combined 55,398 (46.6%)
+
+# Import data
+acs_data_profiles <- dbGetQuery(con, "SELECT * FROM public.acs_data_profiles")
 
 # Chicago 
 acs_data_chi <- acs_data_profiles %>% 
@@ -518,27 +499,76 @@ essential_workers_sf <- left_join(sf_tracts %>% select(GEOID),
 
 ```
 
-```{r origin-destination tracts tmap data, warning=FALSE}
+```{r od tracts data}
 
-# Quantile map, origin
-tmap_od_tracts_comp <-
-  # Origin
-  tm_shape(od_tracts_comp, name = "Origin") +
-  tm_fill(col = "origin_trips", title = "Origin Trips",
+# Join trip data to spatial, reconfigure
+# Origin-Destination
+od_tracts <- 
+  # Origin and Destination
+  full_join(origin_tracts_comp %>% 
+              rename("origin_trips" = trips),
+            destination_tracts_comp %>%
+              rename("destination_trips" = trips),
+            by = c("pickup_census_tract" = "dropoff_census_tract",
+                   "year" = "year",
+                   "covid_group" = "covid_group")) %>% 
+  mutate("origin_trips" = as.numeric(origin_trips),
+         "destination_trips" = as.numeric(destination_trips),
+         "covid_group" = factor(covid_group, 
+                                levels = c("Pre-COVID", 
+                                           "Post-COVID"))) %>% 
+  select("GEOID" = pickup_census_tract, year, covid_group,
+         origin_trips, destination_trips) %>% 
+  group_by(year, covid_group) %>% 
+  mutate("origin_rank" = percent_rank(origin_trips),
+         "destination_rank" = percent_rank(destination_trips)) %>% 
+  ungroup(year, covid_group) %>%
+  # Restrict to Post-COVID
+  filter(covid_group == "Post-COVID") %>% 
+  # Join to spatial data, remove tracts outside Chicago
+  left_join(sf_tracts %>% select(GEOID),
+            .,
+            by = "GEOID") %>% 
+  # Reconfigure and format
+  st_as_sf() %>% 
+  arrange(GEOID, covid_group, year)
+
+
+# Join trip data to spatial, reconfigure
+# Origin-Destination
+od_tracts_rank_change <- od_tracts %>%
+  st_drop_geometry() %>% 
+  pivot_wider(names_from = year,
+              values_from = c(origin_trips, origin_rank,
+                              destination_trips, destination_rank)) %>%
+  mutate("origin_rank_change" = round((origin_rank_2020 -
+                                         origin_rank_2019) * 100, 1),
+         "destination_rank_change" = round((destination_rank_2020 -
+                                              destination_rank_2019) * 100, 1)) %>% 
+  # Join to spatial data, remove tracts outside Chicago
+  left_join(sf_tracts %>% select(GEOID),
+            .,
+            by = "GEOID") %>% 
+  # Reconfigure and format
+  st_as_sf() 
+
+```
+
+```{r origin tracts tmap data, warning=FALSE}
+
+# Origin quantile map
+tmap_origin_facet <-
+  tm_shape(od_tracts %>% 
+             mutate("GEOID" = paste0("GEOID: ", GEOID)),
+           name = "Trips by Origin") +
+  tm_fill(col = "origin_trips", title = "Trips by Origin",
           alpha = 0.5, style = "quantile", 
-          palette = "viridis") +
+          palette = "viridis",
+          popup.vars = c("Trips: " = "origin_trips")) +
   tm_borders(lwd = 0.5) +
-  tm_facets(by = c("covid_group", "year"),
-            free.coords = FALSE,
-            drop.units = TRUE) +
-  # Destination
-  tm_shape(od_tracts_comp, name = "Destination") +
-  tm_fill(col = "destination_trips", title = "Destination Trips",
-          alpha = 0.5, style = "quantile", 
-          palette = "viridis") +
-  tm_borders(lwd = 0.5) +
-  tm_facets(by = c("covid_group", "year"),
-            free.coords = FALSE,
+  tm_facets(by = c("year"),
+            nrow = 1, ncol = 2,
+            free.scales = TRUE,
             drop.units = TRUE) +
   # Essential workers, non-police/fire, top 20%
   tm_shape(essential_workers_sf %>% 
@@ -549,27 +579,122 @@ tmap_od_tracts_comp <-
            name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
   tm_borders(col = "white", lwd = 1) +
   # Layout
-  tm_layout(main.title = "Rideshare Trips by Census Tract", 
+  tm_layout(main.title = "Trips by Census Tract Origin", 
             main.title.position = c("center"),
             legend.outside = TRUE,
             legend.outside.size = 1.5,
             scale = 2.75) +
   tm_view(view.legend.position = c("left", "bottom"))
 
+# Origin change in percent rank map
+tmap_origin_rank_change <-
+  tm_basemap(leaflet::providers$CartoDB.DarkMatter) +
+  tm_shape(od_tracts_rank_change %>% 
+             mutate("GEOID" = paste0("GEOID: ", GEOID)),
+           name = "Change in Percent Rank by Trip Origin") +
+  tm_fill(col = "origin_rank_change",
+          title = "Change in Percent Rank by Trip Origin",
+          alpha = 0.75, style = "cont", 
+          palette = "RdYlGn", midpoint = 0,
+          popup.vars = c("Change in Percent Rank: " = "origin_rank_change")) +
+  tm_borders(lwd = 0.5) +
+  # Essential workers, non-police/fire, top 20%
+  tm_shape(essential_workers_sf %>% 
+             filter(essential_non_police_fire_pct >= 
+                      quantile(essential_non_police_fire_pct,
+                               0.80,
+                               na.rm = TRUE)),
+           name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
+  tm_borders(col = "black", lwd = 1) +
+  # Layout
+  tm_layout(main.title = "Change in Percent Rank by Trip Origin", 
+            main.title.position = c("center"),
+            legend.outside = TRUE,
+            legend.outside.size = 1.5) +
+  tm_view(view.legend.position = c("left", "bottom"))
+
 ```
 
+```{r destination tracts tmap data, warning=FALSE}
 
+# Destination
+tmap_destination_facet <-  
+  tm_shape(od_tracts %>% 
+             mutate("GEOID" = paste0("GEOID: ", GEOID)),
+           name = "Trips by Destination") +
+  tm_fill(col = "destination_trips", title = "Destination",
+          alpha = 0.5, style = "quantile", 
+          palette = "viridis",
+          popup.vars = c("Trips: " = "destination_trips")) +
+  tm_borders(lwd = 0.5) +
+  tm_facets(by = c("year"),
+            nrow = 1, ncol = 2,
+            free.scales = TRUE,
+            drop.units = TRUE) +
+  # Essential workers, non-police/fire, top 20%
+  tm_shape(essential_workers_sf %>% 
+             filter(essential_non_police_fire_pct >= 
+                      quantile(essential_non_police_fire_pct,
+                               0.80,
+                               na.rm = TRUE)),
+           name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
+  tm_borders(col = "white", lwd = 1) +
+  # Layout
+  tm_layout(main.title = "Trips by Census Tract Destination", 
+            main.title.position = c("center"),
+            legend.outside = TRUE,
+            legend.outside.size = 1.5,
+            scale = 2.75) +
+  tm_view(view.legend.position = c("left", "bottom"))
 
-```{r origin-destination flows import, warning=FALSE, message=FALSE}
+# Destination change in percent rank map
+tmap_destination_rank_change <-
+  tm_basemap(leaflet::providers$CartoDB.DarkMatter) +
+  tm_shape(od_tracts_rank_change %>% 
+             mutate("GEOID" = paste0("GEOID: ", GEOID)),
+           name = "Change in Percent Rank by Trip Destination") +
+  tm_fill(col = "destination_rank_change",
+          title = "Change in Percent Rank by Trip Destination",
+          alpha = 0.75, style = "cont", 
+          palette = "RdYlGn", midpoint = 0,
+          popup.vars = c("Change in Percent Rank: " = "destination_rank_change")) +
+  tm_borders(lwd = 0.5) +
+  # Essential workers, non-police/fire, top 20%
+  tm_shape(essential_workers_sf %>% 
+             filter(essential_non_police_fire_pct >= 
+                      quantile(essential_non_police_fire_pct,
+                               0.80,
+                               na.rm = TRUE)),
+           name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
+  tm_borders(col = "black", lwd = 1) +
+  # Layout
+  tm_layout(main.title = "Change in Percent Rank by Trip Destination", 
+            main.title.position = c("center"),
+            legend.outside = TRUE,
+            legend.outside.size = 1.5) +
+  tm_view(view.legend.position = c("left", "bottom"))
+
+```
+
+```{r od flows import, warning=FALSE, message=FALSE}
 
 # Import data
-od_pairs_raw <- dbGetQuery(con, "SELECT * FROM analysis.trip_patterns_tracts_comp") %>% 
+# Tracts
+od_pairs_tracts_raw <- dbGetQuery(con,
+                                  "SELECT * FROM analysis.trip_patterns_tracts_comp") %>% 
+  mutate("covid_group" = factor(covid_group, 
+                                levels = c("Pre-COVID", "Post-COVID")),
+         "trips" = as.numeric(trips))
+# Community Areas
+od_pairs_ccas_raw <- dbGetQuery(con, 
+                                "SELECT * FROM analysis.trip_patterns_cca_comp") %>% 
   mutate("covid_group" = factor(covid_group, 
                                 levels = c("Pre-COVID", "Post-COVID")),
          "trips" = as.numeric(trips))
 
-# Intra- vs inter-tract pairs
-od_pairs_intra_inter <- od_pairs_raw %>% 
+# OD Pairs Intra vs Inter
+# Tracts
+od_pairs_tracts_intra_inter <- od_pairs_tracts_raw %>% 
   mutate("intra_inter" = case_when(pickup_census_tract == 
                                      dropoff_census_tract ~
                                      "Intra (Within Same Tract)",
@@ -580,13 +705,137 @@ od_pairs_intra_inter <- od_pairs_raw %>%
   summarize("trips" = sum(trips)) %>% 
   ungroup()
 
+# Community Areas
+od_pairs_ccas_intra_inter <- od_pairs_ccas_raw %>% 
+  mutate("intra_inter" = case_when(pickup_community_area == 
+                                     dropoff_community_area ~
+                                     "Intra (Within Same Community Area)",
+                                   pickup_community_area != 
+                                     dropoff_community_area ~
+                                     "Inter (Different Community Area)")) %>% 
+  group_by(covid_group, year, intra_inter) %>% 
+  summarize("trips" = sum(trips)) %>% 
+  ungroup()
+
+```
+
+```{r od intra vs inter kable data}
+
+# OD Pairs Intra vs Inter
+# Pre/Post-COVID table
+# Tracts
+od_pairs_tracts_intra_inter_table <- od_pairs_tracts_intra_inter %>% 
+  pivot_wider(names_from = c("year", "covid_group"),
+              values_from = "trips") %>% 
+  adorn_totals(c("row", "col")) %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting()
+
+# Community Areas
+od_pairs_ccas_intra_inter_table <- od_pairs_ccas_intra_inter %>% 
+  pivot_wider(names_from = c("year", "covid_group"),
+              values_from = "trips") %>% 
+  adorn_totals(c("row", "col")) %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting()
+
 ```
 
 
+```{r od airport kable data}
 
+# Calculate airport trips
+od_pairs_airports <- od_pairs_tracts_raw %>% 
+  filter(pickup_census_tract != dropoff_census_tract,
+         pickup_census_tract %in% sf_tracts$GEOID,
+         dropoff_census_tract %in% sf_tracts$GEOID) %>% 
+  mutate("airports" = ifelse(
+    pickup_census_tract %in% c("17031980000", "17031980100") | dropoff_census_tract %in% c("17031980000", "17031980100"), 
+    "To or From O'Hare/Midway",
+    "Other Trip")) %>% 
+  group_by(covid_group, year, airports) %>% 
+  summarize("trips" = sum(trips)) %>% 
+  ungroup()
 
+# Airport table data
+od_pairs_airports_table <- od_pairs_airports %>% 
+  pivot_wider(names_from = c("year", "covid_group"),
+              values_from = "trips") %>% 
+  adorn_totals(c("row", "col")) %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting()
 
+```
 
+```{r od flows data, warning=FALSE, message=FALSE}
+
+# Remove airport trips, make sure in Chicago
+# Convert into desire lines for mapping
+od_pairs_ccas_comp <- od_pairs_ccas_raw %>% 
+  filter(pickup_community_area != dropoff_community_area,
+         pickup_community_area %in% sf_ccas$comm_area_n,
+         dropoff_community_area %in% sf_ccas$comm_area_n #,
+         # !pickup_community_area %in% c(56, 64, 76),
+         # !dropoff_community_area %in% c(56, 64, 76)
+         ) %>%
+  select(pickup_community_area, dropoff_community_area,
+         everything()) %>% 
+  od2line(flow = ., zones = sf_ccas)
+
+# Create a linewidth variable to scale desire lines
+od_pairs_ccas_comp <- od_pairs_ccas_comp %>% 
+  mutate("lwd" = trips / mean(od_pairs_ccas_comp$trips)) %>% 
+  relocate(lwd, .after = trips)
+
+```
+
+```{r od flows ccas tmap data, fig.asp=1.75}
+
+# Distribution of OD trip pairs
+od_pairs_pct <- od_pairs_ccas_comp %>%
+  st_drop_geometry() %>% 
+  group_by(covid_group, year) %>% 
+  arrange(year, covid_group, desc(trips)) %>% 
+  mutate("trips_pct" = trips / sum(trips),
+         "trips_pct_agg" = cumsum(trips_pct)) %>% 
+  ungroup()
+
+# 90% of OD trip pairs in all periods >100 trips
+od_pairs_tail <- od_pairs_pct %>% 
+  group_by(covid_group, year) %>% 
+  filter(trips_pct_agg < 0.90) %>% 
+  arrange(trips) %>% 
+  slice(1) %>% 
+  ungroup()
+
+# OD flows map (all tracts)
+tmap_od_flows_ccas <- tm_shape(sf_ccas) +
+  tm_borders(lwd = 0.5) +
+  tm_shape(od_pairs_ccas_comp,
+           name = "OD Flows") +
+  tm_lines(col = "trips", title = "Trips", 
+           style = "quantile", palette = "viridis",
+           lwd = "lwd", title.lwd = "Trips",
+           scale = 40, alpha = 0.5,
+           legend.lwd.show = FALSE) +
+  tm_facets(by = c("covid_group", "year"), 
+            free.scales = TRUE,
+            drop.units = TRUE) +
+  tm_shape(essential_workers_sf %>% 
+             filter(essential_non_police_fire_pct >= 
+                      quantile(essential_non_police_fire_pct,
+                               0.80,
+                               na.rm = TRUE)),
+           name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
+  tm_borders(col = "black", lwd = 1) +
+  tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD) Pairs", 
+            main.title.position = c("center"),
+            legend.outside = FALSE,
+            legend.width = 1.5,
+            scale = 2.75) +
+  tm_view(view.legend.position = c("left", "bottom"))
+
+```
 
 
 ## Executive Summary
@@ -738,13 +987,15 @@ ggplotly(gg_fares, tooltip = "text") %>%
 
 ## Spatial Distribution of Trips
 
-### Origin/Destination
+### Origin-Destination {.tabset .tabset-pills}
 
 In the Pre-COVID period (1/1-3/21) the spatial distribution of rideshare pickups and dropoffs in 2019 and 2020 were very similar. After the Stay-at-Home Order went into effect, however, trips cratered, particularly those originating on the South, West, and Northwest Sides. Even the core area of high trip activity, roughly comprising the Loop and the North Side, shrunk in size.
 
-**Census tracts where more than 33% of workers are essential are outlined in white, comprising the top 20 percent of tracts in the city. "Essential workers" are defined as: healthcare practitioners and technical occupations; healthcare support occupations; protective service occupations; food preparation and serving related occupations; building and grounds cleaning and maintenance occupations; and personal care and service occupations.** Neighborhoods with a high concentration of essential workers, especially those on the South and West Sides, saw a large decrease in trip dropoffs and pickups. 
+**The top 20 percent of census tracts with the most essential workers are outlined in white. At least 532 essential workers reside in these tracts, accounting for at least 0.18 percent of the citywide total. Combined, these tracts are home to 121,060 (41.5%) of the city's 293,575 essential workers. "Essential workers" are defined as: healthcare practitioners and technical occupations; healthcare support occupations; (protective service occupations; EXCLUDED HERE) food preparation and serving related occupations; building and grounds cleaning and maintenance occupations; and personal care and service occupations.** Neighborhoods with a high concentration of essential workers, especially those on the South and West Sides, saw a large decrease in trip dropoffs and pickups. 
 
-```{r origin-destination tracts tmaps, fig.asp=1.75}
+#### Origin
+
+```{r origin tracts tmap, fig.asp=1.5}
 
 # Create essential worker definition
 # National averages:
@@ -752,19 +1003,44 @@ In the Pre-COVID period (1/1-3/21) the spatial distribution of rideshare pickups
 #     -Healthcare: 9.5%
 # City of Chicago:
 #     -Essential: 334,381 (24.5%)
+#     -Essential Non Police/Fire: 293,575 (21.5%)
 #     -Healthcare: 118,787 (8.7%)
 # Tract median (50th):
 # Share of city employment in occupation
 #     -Essential: 353 (0.11%)
+#     -Essential Non Police/Fire: 314 (0.11%)
 #     -Healthcare: 115 (0.10%)
 # Tract top 20 percent, first quintile (80th):
 # Share of city employment in occupation
 #     -Essential: 610 (0.18%), combined 136,540 (40.8%)
+#     -Essential Non Police/Fire: 532 (0.18%), combined 121,060 (41.5%)
 #     -Healthcare: 214 (0.18%), combined 55,398 (46.6%)
 
 # Quantile map
-tmap_origin_tracts_comp
-tmap_destination_tracts_comp
+tmap_origin_facet
+
+```
+
+```{r origin tracts rank change tmap}
+
+# Percent rank change map
+tmap_origin_rank_change
+
+```
+
+#### Destination
+
+```{r destination tracts tmap, fig.asp=1.5}
+
+# Quantile map
+tmap_destination_facet
+
+```
+
+```{r destination tracts rank change tmap}
+
+# Percent Rank Change
+tmap_destination_rank_change
 
 ```
 
@@ -774,16 +1050,12 @@ tmap_destination_tracts_comp
 
 While origin and destination tracts provide a general sense of the geographic pattern of rideshare trips, they do not capture travel flows between areas. Before analyzing trip flows, it is important to distinguish between those trips that begin and end within the same tract (intra-flows) and trips that begin and end in different tracts (inter-flows). As seen in the table below, very few rideshare trips started and ended in the same tract. About 1.5% of all trips were intra-flows. This was relatively consistent across years and time periods. 
 
-```{r od tracts intra vs inter}
+```{r od intra vs inter kable}
 
 # OD Pairs Intra vs Inter
 # Pre/Post-COVID table
-od_pairs_intra_inter %>% 
-  pivot_wider(names_from = c("year", "covid_group"),
-              values_from = "trips") %>% 
-  adorn_totals(c("row", "col")) %>%
-  adorn_percentages("col") %>%
-  adorn_pct_formatting() %>%
+# Tracts
+od_pairs_tracts_intra_inter_table %>%
   kbl(col.names = c("Trip Type", "2019", "2020", 
                     "2019", "2020", "Total")) %>% 
   add_header_above(c(" ", "Pre-COVID" = 2, "Post-COVID" = 2, " ")) %>%
@@ -791,24 +1063,14 @@ od_pairs_intra_inter %>%
   kable_styling(bootstrap_options = c("striped", "hover", 
                                       "condensed", "responsive"))
 
-```
-
-
-
-```{r od tracts airport data import}
-
-# Calculate airport trips
-od_pairs_airports <- od_pairs_raw %>% 
-  filter(pickup_census_tract != dropoff_census_tract,
-         pickup_census_tract %in% sf_tracts$GEOID,
-         dropoff_census_tract %in% sf_tracts$GEOID) %>% 
-  mutate("airports" = ifelse(
-    pickup_census_tract %in% c("17031980000", "17031980100") | dropoff_census_tract %in% c("17031980000", "17031980100"), 
-    "To or From O'Hare/Midway",
-    "Other Trip")) %>% 
-  group_by(covid_group, year, airports) %>% 
-  summarize("trips" = sum(trips)) %>% 
-  ungroup()
+# Community Areas
+od_pairs_ccas_intra_inter_table %>%
+  kbl(col.names = c("Trip Type", "2019", "2020", 
+                    "2019", "2020", "Total")) %>% 
+  add_header_above(c(" ", "Pre-COVID" = 2, "Post-COVID" = 2, " ")) %>%
+  row_spec(3, bold = TRUE) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", 
+                                      "condensed", "responsive"))
 
 ```
 
@@ -816,16 +1078,11 @@ od_pairs_airports <- od_pairs_raw %>%
 
 Across the entirety of 2019 and 2020, in both Pre-COVID and Post-COVID periods, the most popular trips were from O'Hare and Midway airports to the Loop, and vice versa. Trips to or from Chicago airports alone accounted for between 6% and 9% of all rideshare trips in each analysis period. These trips are excluded from the the OD flows maps below in order to focus on neighborhood-to-neighborhood travel patterns. 
 
-```{r od tracts airport}
+```{r od tracts airport kable}
 
 # OD Pairs Airport Trips
 # Pre/Post-COVID table
-od_pairs_airports %>% 
-  pivot_wider(names_from = c("year", "covid_group"),
-              values_from = "trips") %>% 
-  adorn_totals(c("row", "col")) %>%
-  adorn_percentages("col") %>%
-  adorn_pct_formatting() %>%
+od_pairs_airports_table %>% 
   kbl(col.names = c("Trip Type", "2019", "2020", 
                     "2019", "2020", "Total")) %>% 
   add_header_above(c(" ", "Pre-COVID" = 2, "Post-COVID" = 2, " ")) %>%
@@ -835,91 +1092,22 @@ od_pairs_airports %>%
 
 ```
 
+#### OD Flows
 
-
-```{r od desire lines, warning=FALSE, message=FALSE}
-
-# Remove airport trips, make sure in Chicago
-# Convert into desire lines for mapping
-od_pairs_comp <- od_pairs_raw %>% 
-  filter(pickup_census_tract != dropoff_census_tract,
-         pickup_census_tract %in% sf_tracts$GEOID,
-         dropoff_census_tract %in% sf_tracts$GEOID,
-         !pickup_census_tract %in% c("17031980000", "17031980100"),
-         !dropoff_census_tract %in% c("17031980000", "17031980100")) %>%
-  select(pickup_census_tract, dropoff_census_tract,
-         everything()) %>% 
-  od2line(flow = ., zones = sf_tracts)
-
-# Create a linewidth variable to scale desire lines
-od_pairs_comp <- od_pairs_comp %>% 
-  mutate("lwd" = trips / mean(od_pairs_comp$trips)) %>% 
-  relocate(lwd, .after = trips)
-
-```
-
-#### OD Flows, 1000+ Trips
-
-The maps below link the beginning and end of trips (excluding airport trips), where the color and thickness of desire lines vary based on the number of trips made between tracts. 
+The maps below link the beginning and end of trips (excluding airport community areas), where the color and thickness of desire lines vary based on the number of trips made between tracts. 
 
 The OD pairs indicate a high concentration of trips linking the Central Business District to nearby areas like the West Loop, as well as a clear pattern of trips up and down the lakefront. After the Stay-at-Home Order went into effect, trips linking the South lakefront to the Loop and the North Side decreased dramatically.
 
-**Neighborhoods with a high concentration of essential workers (33%+) are outlined in black.** 
+**Neighborhoods with a high concentration of essential workers (532+, top 20 percent of census tracts) are outlined in black.** 
 
-```{r origin-destination tracts map, fig.asp=1.75}
+```{r od flows ccas tmap, fig.asp=1.75}
 
-# Distribution of OD trip pairs
-od_pairs_pct <- od_pairs_comp %>%
-  st_drop_geometry() %>% 
-  group_by(covid_group, year) %>% 
-  arrange(year, covid_group, desc(trips)) %>% 
-  mutate("trips_pct" = trips / sum(trips),
-         "trips_pct_agg" = cumsum(trips_pct)) %>% 
-  ungroup()
-
-# 90% of OD trip pairs in all periods >100 trips
-od_pairs_tail <- od_pairs_pct %>% 
-  group_by(covid_group, year) %>% 
-  filter(trips_pct_agg < 0.90) %>% 
-  arrange(trips) %>% 
-  slice(1) %>% 
-  ungroup()
-
-# Restrict to valid flows
-od_pairs_restrict <- od_pairs_comp %>% 
-  filter(trips >= 1000)
-
-# OD flows map (all tracts)
-tm_shape(sf_tracts) +
-  tm_borders(lwd = 0.5) +
-  tm_shape(od_pairs_restrict,
-           name = "OD Flows") +
-  tm_lines(col = "trips", title = "Trips", 
-           style = "quantile", palette = "viridis",
-           lwd = "lwd", title.lwd = "Trips",
-           scale = 40, alpha = 0.5,
-           legend.lwd.show = FALSE) +
-  tm_facets(by = c("covid_group", "year"), 
-            free.coords = FALSE,
-            drop.units = TRUE) +
-  tm_shape(essential_workers_sf %>% 
-             filter(essential_pct >= quantile(essential_pct,
-                                              0.80,
-                                              na.rm = TRUE)),
-           name = "Essential Workers") +
-  tm_borders(col = "black", lwd = 1) +
-  tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD) Pairs\nOD Pairs with 1,000+ Trips", 
-            main.title.position = c("center"),
-            legend.outside = FALSE,
-            legend.width = 1.5,
-            scale = 2.75) +
-  tm_view(view.legend.position = c("left", "bottom"))
+# OD flows map (all community areas)
+tmap_od_flows_ccas
 
 ```
 
 ## Drivers
-
-
 
 ```{r, driver}
 ## Drivers
