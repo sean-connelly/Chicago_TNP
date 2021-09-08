@@ -260,6 +260,7 @@ group by extract(year from trip_end), covid_group, dropoff_community_area, dropo
 order by dropoff_community_area, dropoff_hour;
 
 --2019 vs 2020 trip patterns by community area
+--removing airport trips
 drop table if exists analysis.trip_patterns_cca_comp;
 create table analysis.trip_patterns_cca_comp as
 select
@@ -271,6 +272,9 @@ count(*) as trips
 from analysis.base_ytd
 where pickup_community_area is not null
   and dropoff_community_area is not null
+  --remove airport trips
+  and pickup_census_tract not in ('17031980000', '17031980100')
+  and dropoff_census_tract not in ('17031980000', '17031980100')
 group by extract(year from trip_start), covid_group, pickup_community_area, dropoff_community_area;
 
 

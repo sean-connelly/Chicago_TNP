@@ -365,7 +365,24 @@ fares_tail <- fares_pct %>%
 
 ```
 
-```{r fares ggplot}
+```{r fares kable data}
+
+# Average fares
+# Pre/Post COVID table
+trip_chars_fares <- trip_chars_avg %>%
+  select(covid_group, year, fare) %>% 
+  pivot_wider(names_from = "year", 
+              values_from = "fare") %>% 
+  mutate("change" = `2020`-`2019`,
+         "change_pct" = (change/`2019`)) %>% 
+  mutate(across(c(`2019`, `2020`, change), dollar),
+         "change_pct" = percent(change_pct)) %>% 
+  select("Period" = covid_group, `2019`, `2020`, 
+         "Change" = change, "Change (%)" = change_pct)
+
+```
+
+```{r fares ggplot, warning=FALSE}
 
 # Histogram
 gg_fares <- fares %>%
@@ -387,23 +404,6 @@ gg_fares <- fares %>%
   facet_grid(covid_group ~ year) +
   scale_fill_ipsum() +
   theme_ipsum()
-
-```
-
-```{r fares kable data}
-
-# Average fares
-# Pre/Post COVID table
-trip_chars_fares <- trip_chars_avg %>%
-  select(covid_group, year, fare) %>% 
-  pivot_wider(names_from = "year", 
-              values_from = "fare") %>% 
-  mutate("change" = `2020`-`2019`,
-         "change_pct" = (change/`2019`)) %>% 
-  mutate(across(c(`2019`, `2020`, change), dollar),
-         "change_pct" = percent(change_pct)) %>% 
-  select("Period" = covid_group, `2019`, `2020`, 
-         "Change" = change, "Change (%)" = change_pct)
 
 ```
 
@@ -542,9 +542,9 @@ od_tracts_rank_change <- od_tracts %>%
               values_from = c(origin_trips, origin_rank,
                               destination_trips, destination_rank)) %>%
   mutate("origin_rank_change" = round((origin_rank_2020 -
-                                         origin_rank_2019) * 100, 1),
+                                         origin_rank_2019) * 100, 0),
          "destination_rank_change" = round((destination_rank_2020 -
-                                              destination_rank_2019) * 100, 1)) %>% 
+                                              destination_rank_2019) * 100, 0)) %>% 
   # Join to spatial data, remove tracts outside Chicago
   left_join(sf_tracts %>% select(GEOID),
             .,
@@ -558,17 +558,18 @@ od_tracts_rank_change <- od_tracts %>%
 
 # Origin quantile map
 tmap_origin_facet <-
-  tm_shape(od_tracts %>% 
+  tm_shape(od_tracts %>%
              mutate("GEOID" = paste0("GEOID: ", GEOID)),
            name = "Trips by Origin") +
   tm_fill(col = "origin_trips", title = "Trips by Origin",
-          alpha = 0.5, style = "quantile", 
-          palette = "viridis",
+          alpha = 0.8,
+          style = "log10_pretty",
+          palette = "plasma",
           popup.vars = c("Trips: " = "origin_trips")) +
   tm_borders(lwd = 0.5) +
-  tm_facets(by = c("year"),
+  tm_facets(by = c("covid_group", "year"),
             nrow = 1, ncol = 2,
-            free.scales = TRUE,
+            free.scales = FALSE,
             drop.units = TRUE) +
   # Essential workers, non-police/fire, top 20%
   tm_shape(essential_workers_sf %>% 
@@ -577,13 +578,9 @@ tmap_origin_facet <-
                                0.80,
                                na.rm = TRUE)),
            name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
-  tm_borders(col = "white", lwd = 1) +
+  tm_borders(col = "black", lwd = 0.75) +
   # Layout
-  tm_layout(main.title = "Trips by Census Tract Origin", 
-            main.title.position = c("center"),
-            legend.outside = TRUE,
-            legend.outside.size = 1.5,
-            scale = 2.75) +
+  tm_layout(scale = 2.75) +
   tm_view(view.legend.position = c("left", "bottom"))
 
 # Origin change in percent rank map
@@ -591,12 +588,13 @@ tmap_origin_rank_change <-
   tm_basemap(leaflet::providers$CartoDB.DarkMatter) +
   tm_shape(od_tracts_rank_change %>% 
              mutate("GEOID" = paste0("GEOID: ", GEOID)),
-           name = "Change in Percent Rank by Trip Origin") +
+           name = "Change in Percentile<br>by Trip Origin") +
   tm_fill(col = "origin_rank_change",
-          title = "Change in Percent Rank by Trip Origin",
-          alpha = 0.75, style = "cont", 
+          title = "Change in Percentile<br>by Trip Origin",
+          alpha = 0.9, breaks = c(-Inf, -25, -15, -5,
+                                  5, 15, 25, Inf),
           palette = "RdYlGn", midpoint = 0,
-          popup.vars = c("Change in Percent Rank: " = "origin_rank_change")) +
+          popup.vars = c("Change in Percentile: " = "origin_rank_change")) +
   tm_borders(lwd = 0.5) +
   # Essential workers, non-police/fire, top 20%
   tm_shape(essential_workers_sf %>% 
@@ -605,12 +603,9 @@ tmap_origin_rank_change <-
                                0.80,
                                na.rm = TRUE)),
            name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
-  tm_borders(col = "black", lwd = 1) +
+  tm_borders(col = "black", lwd = 1.25) +
   # Layout
-  tm_layout(main.title = "Change in Percent Rank by Trip Origin", 
-            main.title.position = c("center"),
-            legend.outside = TRUE,
-            legend.outside.size = 1.5) +
+  tm_layout(title = "Change in Percentile<br>by Trip Origin") +
   tm_view(view.legend.position = c("left", "bottom"))
 
 ```
@@ -619,17 +614,17 @@ tmap_origin_rank_change <-
 
 # Destination
 tmap_destination_facet <-  
-  tm_shape(od_tracts %>% 
+  tm_shape(od_tracts %>%
              mutate("GEOID" = paste0("GEOID: ", GEOID)),
            name = "Trips by Destination") +
   tm_fill(col = "destination_trips", title = "Destination",
-          alpha = 0.5, style = "quantile", 
-          palette = "viridis",
+          alpha = 0.8, style = "log10_pretty",
+          palette = "plasma",
           popup.vars = c("Trips: " = "destination_trips")) +
   tm_borders(lwd = 0.5) +
-  tm_facets(by = c("year"),
+  tm_facets(by = c("covid_group", "year"),
             nrow = 1, ncol = 2,
-            free.scales = TRUE,
+            free.scales = FALSE,
             drop.units = TRUE) +
   # Essential workers, non-police/fire, top 20%
   tm_shape(essential_workers_sf %>% 
@@ -638,13 +633,9 @@ tmap_destination_facet <-
                                0.80,
                                na.rm = TRUE)),
            name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
-  tm_borders(col = "white", lwd = 1) +
+  tm_borders(col = "black", lwd = 0.75) +
   # Layout
-  tm_layout(main.title = "Trips by Census Tract Destination", 
-            main.title.position = c("center"),
-            legend.outside = TRUE,
-            legend.outside.size = 1.5,
-            scale = 2.75) +
+  tm_layout(scale = 2.75) +
   tm_view(view.legend.position = c("left", "bottom"))
 
 # Destination change in percent rank map
@@ -652,12 +643,13 @@ tmap_destination_rank_change <-
   tm_basemap(leaflet::providers$CartoDB.DarkMatter) +
   tm_shape(od_tracts_rank_change %>% 
              mutate("GEOID" = paste0("GEOID: ", GEOID)),
-           name = "Change in Percent Rank by Trip Destination") +
+           name = "Change in Percentile<br>by Trip Destination") +
   tm_fill(col = "destination_rank_change",
-          title = "Change in Percent Rank by Trip Destination",
-          alpha = 0.75, style = "cont", 
+          title = "Change in Percentile<br>by Trip Destination",
+          alpha = 0.9, breaks = c(-Inf, -25, -15, -5,
+                                  5, 15, 25, Inf),
           palette = "RdYlGn", midpoint = 0,
-          popup.vars = c("Change in Percent Rank: " = "destination_rank_change")) +
+          popup.vars = c("Change in Percentile: " = "destination_rank_change")) +
   tm_borders(lwd = 0.5) +
   # Essential workers, non-police/fire, top 20%
   tm_shape(essential_workers_sf %>% 
@@ -666,13 +658,42 @@ tmap_destination_rank_change <-
                                0.80,
                                na.rm = TRUE)),
            name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
-  tm_borders(col = "black", lwd = 1) +
+  tm_borders(col = "black", lwd = 1.25) +
   # Layout
-  tm_layout(main.title = "Change in Percent Rank by Trip Destination", 
-            main.title.position = c("center"),
-            legend.outside = TRUE,
-            legend.outside.size = 1.5) +
+  tm_layout(title = "Change in Percentile<br>by Trip Destination") +
   tm_view(view.legend.position = c("left", "bottom"))
+
+```
+
+```{r od ccas data}
+
+# Get trip totals by community area
+# Yera, COVID group
+od_ccas <- od_tracts %>% 
+  st_drop_geometry() %>% 
+  left_join(sf_tracts %>% 
+              st_drop_geometry() %>% 
+              select(GEOID, comm_area_n),
+            by = "GEOID") %>% 
+  left_join(sf_ccas %>% 
+              select(comm_area_n, community),
+            by = "comm_area_n") %>% 
+  group_by(comm_area_n, community, 
+           year, covid_group) %>% 
+  summarize(across(ends_with("_trips"), sum)) %>% 
+  mutate("trips" = origin_trips + destination_trips) %>% 
+  select(comm_area_n:covid_group, trips) %>% 
+  group_by(year, covid_group) %>% 
+  mutate("trips_pct" = trips/sum(trips)) %>% 
+  ungroup()
+
+# Top 3 community areas
+od_ccas_top3 <- od_ccas %>%
+  group_by(year, covid_group) %>% 
+  arrange(desc(trips_pct)) %>% 
+  slice(1:3) %>% 
+  summarize(across(starts_with("trips"), sum))
+  
 
 ```
 
@@ -741,7 +762,6 @@ od_pairs_ccas_intra_inter_table <- od_pairs_ccas_intra_inter %>%
 
 ```
 
-
 ```{r od airport kable data}
 
 # Calculate airport trips
@@ -767,17 +787,16 @@ od_pairs_airports_table <- od_pairs_airports %>%
 
 ```
 
-```{r od flows data, warning=FALSE, message=FALSE}
+```{r od flows CALCULATION, warning=FALSE, message=FALSE}
 
 # Remove airport trips, make sure in Chicago
 # Convert into desire lines for mapping
+# Post-COVID, 2019 vs 2020
 od_pairs_ccas_comp <- od_pairs_ccas_raw %>% 
+  filter(covid_group == "Post-COVID") %>% 
   filter(pickup_community_area != dropoff_community_area,
          pickup_community_area %in% sf_ccas$comm_area_n,
-         dropoff_community_area %in% sf_ccas$comm_area_n #,
-         # !pickup_community_area %in% c(56, 64, 76),
-         # !dropoff_community_area %in% c(56, 64, 76)
-         ) %>%
+         dropoff_community_area %in% sf_ccas$comm_area_n) %>%
   select(pickup_community_area, dropoff_community_area,
          everything()) %>% 
   od2line(flow = ., zones = sf_ccas)
@@ -791,34 +810,20 @@ od_pairs_ccas_comp <- od_pairs_ccas_comp %>%
 
 ```{r od flows ccas tmap data, fig.asp=1.75}
 
-# Distribution of OD trip pairs
-od_pairs_pct <- od_pairs_ccas_comp %>%
-  st_drop_geometry() %>% 
-  group_by(covid_group, year) %>% 
-  arrange(year, covid_group, desc(trips)) %>% 
-  mutate("trips_pct" = trips / sum(trips),
-         "trips_pct_agg" = cumsum(trips_pct)) %>% 
-  ungroup()
-
-# 90% of OD trip pairs in all periods >100 trips
-od_pairs_tail <- od_pairs_pct %>% 
-  group_by(covid_group, year) %>% 
-  filter(trips_pct_agg < 0.90) %>% 
-  arrange(trips) %>% 
-  slice(1) %>% 
-  ungroup()
-
-# OD flows map (all tracts)
-tmap_od_flows_ccas <- tm_shape(sf_ccas) +
+# OD flows map (all community areas)
+tmap_od_flows_ccas <- 
+  tm_basemap(leaflet::providers$CartoDB.Positron) +
+  tm_shape(sf_ccas) +
   tm_borders(lwd = 0.5) +
   tm_shape(od_pairs_ccas_comp,
            name = "OD Flows") +
   tm_lines(col = "trips", title = "Trips", 
-           style = "quantile", palette = "viridis",
+           style = "log10", palette = "viridis",
            lwd = "lwd", title.lwd = "Trips",
-           scale = 40, alpha = 0.5,
+           scale = 20, alpha = 0.5,
            legend.lwd.show = FALSE) +
-  tm_facets(by = c("covid_group", "year"), 
+  tm_facets(by = c("year"),
+            nrow = 1, ncol = 2,
             free.scales = TRUE,
             drop.units = TRUE) +
   tm_shape(essential_workers_sf %>% 
@@ -828,7 +833,7 @@ tmap_od_flows_ccas <- tm_shape(sf_ccas) +
                                na.rm = TRUE)),
            name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
   tm_borders(col = "black", lwd = 1) +
-  tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD) Pairs", 
+  tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD)<br>Community Areas", 
             main.title.position = c("center"),
             legend.outside = FALSE,
             legend.width = 1.5,
@@ -837,7 +842,9 @@ tmap_od_flows_ccas <- tm_shape(sf_ccas) +
 
 ```
 
+```{r }
 
+```
 ## Executive Summary
 
 ## Rideshare Data
@@ -974,7 +981,7 @@ trip_chars_fares %>%
 
 ```
 
-```{r fares interactive plot}
+```{r fares interactive plot, warning=FALSE}
 
 # Interactive plot
 ggplotly(gg_fares, tooltip = "text") %>% 
@@ -987,11 +994,17 @@ ggplotly(gg_fares, tooltip = "text") %>%
 
 ## Spatial Distribution of Trips
 
+The spatial distribution of rideshare origins and destinations during the Pre-COVID period (1/1-3/21) of 2019 and 2020 were very similar. **The maps below display how spatial patterns changed after the Stay-at-Home Order went into effect.**
+
+**The top 20 percent of census tracts with the most essential workers are outlined in black. At least 532 essential workers reside in these tracts, accounting for at least 0.18 percent of the citywide total. Combined, these tracts are home to 121,060 (41.5%) of the city's 293,575 essential workers.** "Essential workers" are defined as: healthcare practitioners and technical occupations; healthcare support occupations; (protective service occupations; EXCLUDED HERE) food preparation and serving related occupations; building and grounds cleaning and maintenance occupations; and personal care and service occupations.
+
 ### Origin-Destination {.tabset .tabset-pills}
 
-In the Pre-COVID period (1/1-3/21) the spatial distribution of rideshare pickups and dropoffs in 2019 and 2020 were very similar. After the Stay-at-Home Order went into effect, however, trips cratered, particularly those originating on the South, West, and Northwest Sides. Even the core area of high trip activity, roughly comprising the Loop and the North Side, shrunk in size.
+Rideshare trips are highly concentrated around the downtown core - note the logarithmic scale of each map. While the number of trips in 2020 cratered compared to the same period in 2019, most trips were still in and around the central business district. In the Post-COVID periods of both 2019 and 2020, the top three community areas (The Loop, Near North Side, and Near West Side) accounted for just over 40 percent of all rideshare trips within the city.
 
-**The top 20 percent of census tracts with the most essential workers are outlined in white. At least 532 essential workers reside in these tracts, accounting for at least 0.18 percent of the citywide total. Combined, these tracts are home to 121,060 (41.5%) of the city's 293,575 essential workers. "Essential workers" are defined as: healthcare practitioners and technical occupations; healthcare support occupations; (protective service occupations; EXCLUDED HERE) food preparation and serving related occupations; building and grounds cleaning and maintenance occupations; and personal care and service occupations.** Neighborhoods with a high concentration of essential workers, especially those on the South and West Sides, saw a large decrease in trip dropoffs and pickups. 
+The widespread decline in the volume of trips, however, does mask some relative changes in neighborhood rideshare usage. The second map shows how the percentile rank of each Census Tract changed during the Post-COVID period in 2020 versus 2019. For example, one tract in the West Side neighborhood of Austin was middle of the pack for trip pickups in 2019 (56th percentile). Pickups were almost cut in half in 2020, but the tract qualified as one of the more active pickup spots in the city (75th percentile). Neighborhoods on the South and West Sides saw a relative increase in their percentile rank, indicating an inelastic demand for rideshare. While few rideshare trips were made in these areas compared to other parts of the city, trip behavior was more resilient during the pandemic. 
+
+These South and West Side neighborhoods include some of areas with a high concentration of essential workers, but the parts of the Southwest and Northwest Sides that saw the largest relative dropoff in their trip ranking are also home to many essential workers. 
 
 #### Origin
 
@@ -1021,7 +1034,7 @@ tmap_origin_facet
 
 ```
 
-```{r origin tracts rank change tmap}
+```{r origin tracts rank change tmap, fig.width=8}
 
 # Percent rank change map
 tmap_origin_rank_change
