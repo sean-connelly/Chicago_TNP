@@ -27,9 +27,9 @@ options(scipen = 999, stringsAsFactors = FALSE, dplyr.summarise.inform = FALSE)
 knitr::opts_chunk$set(echo = FALSE, fig.width = 12, fig.asp = 0.618,
                       fig.align = "center", out.width = "100%")
 tmap_mode("view")
-tmap_options(basemaps = c(OSM = "OpenStreetMap", 
-                          Light = "CartoDB.Positron",
-                          Dark = "CartoDB.DarkMatter"))
+tmap_options(basemaps = c(Light = "CartoDB.Positron",
+                          Dark = "CartoDB.DarkMatter",
+                          OSM = "OpenStreetMap"))
 
 ```
 
@@ -787,7 +787,7 @@ od_pairs_airports_table <- od_pairs_airports %>%
 
 ```
 
-```{r od flows CALCULATION, warning=FALSE, message=FALSE}
+```{r od flows calculation, warning=FALSE, message=FALSE}
 
 # Remove airport trips, make sure in Chicago
 # Convert into desire lines for mapping
@@ -803,7 +803,7 @@ od_pairs_ccas_comp <- od_pairs_ccas_raw %>%
 
 # Create a linewidth variable to scale desire lines
 od_pairs_ccas_comp <- od_pairs_ccas_comp %>% 
-  mutate("lwd" = trips / mean(od_pairs_ccas_comp$trips)) %>% 
+  mutate("lwd" = scales::rescale(trips, to = c(0, 3))) %>% 
   relocate(lwd, .after = trips)
 
 ```
@@ -818,11 +818,11 @@ tmap_od_flows_ccas <-
   tm_shape(od_pairs_ccas_comp,
            name = "OD Flows") +
   tm_lines(col = "trips", title = "Trips", 
-           style = "log10", palette = "viridis",
+           style = "log10_pretty", palette = "plasma",
            lwd = "lwd", title.lwd = "Trips",
-           scale = 20, alpha = 0.5,
+           scale = 15, alpha = 0.5,
            legend.lwd.show = FALSE) +
-  tm_facets(by = c("year"),
+  tm_facets(by = c("covid_group", "year"),
             nrow = 1, ncol = 2,
             free.scales = TRUE,
             drop.units = TRUE) +
@@ -832,7 +832,7 @@ tmap_od_flows_ccas <-
                                0.80,
                                na.rm = TRUE)),
            name = "Share of Chicago Essential Workers<br>Top 20 Percent") +
-  tm_borders(col = "black", lwd = 1) +
+  tm_borders(col = "black", lwd = 0.75) +
   tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD)<br>Community Areas", 
             main.title.position = c("center"),
             legend.outside = FALSE,
@@ -842,9 +842,10 @@ tmap_od_flows_ccas <-
 
 ```
 
-```{r }
+```{r drivers import}
 
 ```
+
 ## Executive Summary
 
 ## Rideshare Data
@@ -953,7 +954,7 @@ trip_chars_distance %>%
 
 ### Duration
 
-While average trip distance increased slightly, the average trip duration fell significantly in 2020. After March 21, 2020, the average trip time was 15.9 minutes, a 15% decrease compared to the same period in 2019. This finding aligns with Manzo and Bruno's [analysis based on a sample of trips from September 2019 and September 2020](https://illinoisepi.files.wordpress.com/2021/01/ilepi-pmcr-on-demand-workers-sub-minimum-wages-final.pdf) which found a 16% decline in average trip duration due to a decrease in congestion.
+While average trip distance increased slightly, the average trip duration fell significantly in 2020. After March 21, 2020, the average trip time was 15.9 minutes, a 15 percent decrease compared to the same period in 2019. This finding aligns with Manzo and Bruno's [analysis based on a sample of trips from September 2019 and September 2020](https://illinoisepi.files.wordpress.com/2021/01/ilepi-pmcr-on-demand-workers-sub-minimum-wages-final.pdf) which found a 16 percent decline in average trip duration due to a decrease in congestion.
 
 ```{r duration kable}
 
@@ -968,7 +969,7 @@ trip_chars_duration %>%
 
 ### Fares
 
-The average trip fare in 2020 was about $0.80 higher in the first three months of the year compared to the same period in 2019, a 7.4% increase. However, in the period after the Stay-at-Home Order went into effect, the average trip fare in 2020 was about the same as in 2019.
+The average trip fare in 2020 was about $0.80 higher in the first three months of the year compared to the same period in 2019, a 7.4 percent increase. However, in the period after the Stay-at-Home Order went into effect, the average trip fare in 2020 was about the same as in 2019.
 
 ```{r fares kable}
 
@@ -992,17 +993,17 @@ ggplotly(gg_fares, tooltip = "text") %>%
 
 ```
 
-## Spatial Distribution of Trips
+## Spatial Distribution of Trips, Post-COVID
 
-The spatial distribution of rideshare origins and destinations during the Pre-COVID period (1/1-3/21) of 2019 and 2020 were very similar. **The maps below display how spatial patterns changed after the Stay-at-Home Order went into effect.**
+The spatial distribution of rideshare trips that started and ended within the City of Chicago during the Pre-COVID period (1/1-3/21) of 2019 and 2020 were very similar. **The maps below display how spatial patterns changed after the Stay-at-Home Order went into effect, relative to 2019.**
 
-**The top 20 percent of census tracts with the most essential workers are outlined in black. At least 532 essential workers reside in these tracts, accounting for at least 0.18 percent of the citywide total. Combined, these tracts are home to 121,060 (41.5%) of the city's 293,575 essential workers.** "Essential workers" are defined as: healthcare practitioners and technical occupations; healthcare support occupations; (protective service occupations; EXCLUDED HERE) food preparation and serving related occupations; building and grounds cleaning and maintenance occupations; and personal care and service occupations.
+**The top 20 percent of census tracts with the most essential workers are outlined in black. At least 532 essential workers reside in each of these tracts. Combined, these tracts are home to 121,060 (41.5%) of the city's 293,575 essential workers.** "Essential workers" are defined as: healthcare practitioners and technical occupations; healthcare support occupations; (protective service occupations; EXCLUDED HERE) food preparation and serving related occupations; building and grounds cleaning and maintenance occupations; and personal care and service occupations.
 
 ### Origin-Destination {.tabset .tabset-pills}
 
-Rideshare trips are highly concentrated around the downtown core - note the logarithmic scale of each map. While the number of trips in 2020 cratered compared to the same period in 2019, most trips were still in and around the central business district. In the Post-COVID periods of both 2019 and 2020, the top three community areas (The Loop, Near North Side, and Near West Side) accounted for just over 40 percent of all rideshare trips within the city.
+The spatial distribution of rideshare origins and destinations are very similar. Trips are highly concentrated around the downtown core - note the logarithmic scale of each map. While the number of trips in 2020 cratered compared to the same period in 2019, most trips started or ended around the central business district. In the Post-COVID periods of both 2019 and 2020, the top three community areas (The Loop, Near North Side, and Near West Side) accounted for over 40 percent of all rideshare trips within the city.
 
-The widespread decline in the volume of trips, however, does mask some relative changes in neighborhood rideshare usage. The second map shows how the percentile rank of each Census Tract changed during the Post-COVID period in 2020 versus 2019. For example, one tract in the West Side neighborhood of Austin was middle of the pack for trip pickups in 2019 (56th percentile). Pickups were almost cut in half in 2020, but the tract qualified as one of the more active pickup spots in the city (75th percentile). Neighborhoods on the South and West Sides saw a relative increase in their percentile rank, indicating an inelastic demand for rideshare. While few rideshare trips were made in these areas compared to other parts of the city, trip behavior was more resilient during the pandemic. 
+The widespread decline in the volume of trips, however, does mask some relative changes in neighborhood rideshare usage. The second map shows how the percentile rank of each Census Tract changed during the Post-COVID period in 2020 versus 2019. For example, one tract in the West Side neighborhood of Austin was middle of the pack for trip pickups in 2019 (56th percentile). Pickups were almost cut in half in 2020, but the tract qualified as one of the more active pickup spots in the city (75th percentile). Neighborhoods on the South and West Sides saw a relative increase in their percentile rank, indicating an inelastic demand for rideshare. While few rideshare trips were made in these areas compared to other parts of the city, rideshare trip behavior was less affected during the pandemic. 
 
 These South and West Side neighborhoods include some of areas with a high concentration of essential workers, but the parts of the Southwest and Northwest Sides that saw the largest relative dropoff in their trip ranking are also home to many essential workers. 
 
@@ -1061,7 +1062,7 @@ tmap_destination_rank_change
 
 #### Flow Types
 
-While origin and destination tracts provide a general sense of the geographic pattern of rideshare trips, they do not capture travel flows between areas. Before analyzing trip flows, it is important to distinguish between those trips that begin and end within the same tract (intra-flows) and trips that begin and end in different tracts (inter-flows). As seen in the table below, very few rideshare trips started and ended in the same tract. About 1.5% of all trips were intra-flows. This was relatively consistent across years and time periods. 
+While origin and destination tracts provide a general sense of the geographic pattern of rideshare trips, they do not capture travel flows between areas. Before analyzing trip flows, it is important to distinguish between those trips that begin and end within the same tract (intra-flows) and trips that begin and end in different tracts (inter-flows). As seen in the table below, very few rideshare trips started and ended in the same tract. About 1.5 percent of all trips were intra-flows. Zooming out to the Community Area level, a far higher percentage of trips started and ended in the same neighborhood - roughly 20 percent. These figures were relatively consistent across years and time periods. 
 
 ```{r od intra vs inter kable}
 
@@ -1107,9 +1108,9 @@ od_pairs_airports_table %>%
 
 #### OD Flows
 
-The maps below link the beginning and end of trips (excluding airport community areas), where the color and thickness of desire lines vary based on the number of trips made between tracts. 
+The maps below link the beginning and end of trips (excluding airport trips), where the color and thickness of desire lines vary based on the number of trips made between Community Areas.
 
-The OD pairs indicate a high concentration of trips linking the Central Business District to nearby areas like the West Loop, as well as a clear pattern of trips up and down the lakefront. After the Stay-at-Home Order went into effect, trips linking the South lakefront to the Loop and the North Side decreased dramatically.
+The OD pairs indicate that the most common trips are short rides from and to the Loop and nearby areas like the West Loop and River North. There is also a clear pattern of trips up and down the lakefront, particularly on the North Side. These trends are in line Streetsblog Chicago's [analysis of 2018 data](https://chi.streetsblog.org/2019/04/18/the-most-common-chicago-ride-hailing-trip-is-a-1-mile-hop-from-river-north-to-loop/). After the Stay-at-Home Order went into effect, trips linking the South lakefront to the Loop and the North Side decreased dramatically.
 
 **Neighborhoods with a high concentration of essential workers (532+, top 20 percent of census tracts) are outlined in black.** 
 
