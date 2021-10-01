@@ -1,5 +1,6 @@
 ---
 title: "Rideshare in Chicago During COVID-19"
+author: "Nathalie P. Voorhees Center for Neighborhood and Community Improvement at UIC"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output:
   html_document:
@@ -19,15 +20,26 @@ editor_options:
 .exec-summ-column-left{
   float: left;
   height: 100%;
-  width: 50%;
+  width: 33%;
   text-align: left;
 }
 .exec-summ-column-right{
   float: right;
   height: 100%;
-  width: 50%;
+  width: 66%;
   text-align: left;
 }
+
+@media print {
+  #TOC { 
+    display: none; 
+  }
+  @page { 
+    size: 8.5in 11in;
+    margin: 0;
+  }
+}
+
 </style>
 
 ```{r setup, include=FALSE}
@@ -35,8 +47,8 @@ editor_options:
 # Load libraries
 library(tidyverse);library(lubridate);library(janitor)
 library(sf);library(stplanr);library(leaflet)
-library(leaflet.extras);library(tmap);library(gghighlight)
-library(plotly);library(knitr);library(here)
+library(leaflet.extras);library(tmap);library(cartography)
+library(plotly);library(knitr);library(here);library(ggspatial)
 library(kableExtra);library(viridis);library(scales)
 library(hrbrthemes);library(ggthemes);library(RPostgres)
 library(RPostgreSQL);library(DBI);library(config)
@@ -45,8 +57,9 @@ library(RPostgreSQL);library(DBI);library(config)
 setwd(here::here())
 options(scipen = 999, stringsAsFactors = FALSE, dplyr.summarise.inform = FALSE)
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE,
-                      fig.width = 12, fig.asp = 0.618,
+                      fig.width = 10, fig.asp = 0.618,
                       fig.align = "center", out.width = "100%")
+
 tmap_mode("view")
 tmap_options(basemaps = c(Light = "CartoDB.Positron",
                           Dark = "CartoDB.DarkMatter",
@@ -107,8 +120,6 @@ daily_trips <- daily_trips %>%
 
 ```
 
-
-
 ```{r daily trips ggplot}
 
 # Plot information
@@ -138,7 +149,7 @@ gg_daily_trips <- daily_trips %>%
                date_labels = "%b") +
   scale_y_continuous(labels = comma,
                      limits = c(0, NA)) +
-  labs(title = paste0("Compared to 2019, rideshare trips decreased by ",
+  labs(title = paste0("Compared to 2019, rideshare trips fell by ",
                       daily_trips_plot_title$title_text, " in 2020"),
        x = "Day of the Year", y = "Aggregate Trips",
        color = "Year") +
@@ -863,7 +874,7 @@ tmap_od_flows_ccas <-
                                na.rm = TRUE)),
            name = "Share of Chicago Essential Workers<br>Top 20 Percent of Tracts") +
   tm_borders(col = "black", lwd = 0.75) +
-  tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD)<br>Community Areas", 
+  tm_layout(main.title = "Rideshare Trips by Origin-Destination (OD)<br>Community Areas<br>Excluding Airports", 
             main.title.position = c("center"),
             legend.outside = FALSE,
             legend.width = 1.5,
@@ -872,37 +883,33 @@ tmap_od_flows_ccas <-
 
 ```
 
-```{r od flows executive summary}
+```{r od flows executive summary, warning=FALSE, message=FALSE}
 
 # Executive summary OD flows
-tmap_od_flows_exec_summ <- 
-  tm_basemap(leaflet::providers$CartoDB.Positron) +
-  tm_shape(sf_ccas, name = "Community Areas") +
-  tm_borders(lwd = 0.5) +
-  tm_shape(od_pairs_ccas_comp %>% 
-             filter(year == 2020,
-                    covid_group == "Post-COVID"),
-           name = "OD Flows") +
-  tm_lines(col = "trips", title = "Rideshare Trips After<br>Stay-at-Home Order (3/21/20)<br>by Origin-Destination<br>Community Areas", 
-           style = "log10_pretty", palette = "plasma",
-           lwd = "lwd", title.lwd = "Trips",
-           scale = 10, alpha = 0.5,
-           legend.lwd.show = FALSE) +
-  # tm_shape(essential_workers_sf %>% 
-  #            filter(essential_non_police_fire_pct >= 
-  #                     quantile(essential_non_police_fire_pct,
-  #                              0.80,
-  #                              na.rm = TRUE)),
-  #          legend.show = TRUE,
-  #          name = "Share of Chicago<br>Essential Workers<br>Top 20 Percent of Tracts") +
-  # tm_borders(col = "black", lwd = 0.75) +
-  tm_layout(legend.outside = FALSE,
-            legend.width = 1.5,
-            scale = 2.75) +
-  tm_view(view.legend.position = c("left", "bottom"),
-          set.view = 10.5,
-          leaflet.options = list(zoomSnap = 0.5,
-                                 zoomDelta = 0.5))
+static_basemap <- getTiles(sf_ccas,
+                           type = "CartoDB.PositronNoLabels",
+                           crop = TRUE)
+
+ggplot_od_flows_exec_summ <- 
+  ggplot() +
+  ggspatial::layer_spatial(static_basemap) +
+  geom_sf(data = sf_ccas, 
+          fill = NA, color = "black", size = 0.5) +
+  geom_sf(data = od_pairs_ccas_comp %>% 
+            filter(year == 2020,
+                   covid_group == "Post-COVID") %>% 
+            mutate("lwd" = (trips / 
+                              mean(od_pairs_ccas_comp$trips)) * 5,
+                   "alpha" = rescale(trips, 0.001, 1)) %>% 
+            arrange(trips),
+          aes(color = trips, lwd = lwd, alpha = alpha)) +
+  scale_size(range = c(0.001, 5)) +
+  scale_alpha(range = c(0, 1)) +
+  scale_color_viridis(trans = "log10", option = "plasma") +
+  labs(color = "Rideshare Trips\nExcluding Airports\nAfter 3/21/20\nOrigin or Destination") +
+  guides(size = "none", alpha = "none") +
+  theme_void() +
+  theme(legend.position = c(0.2, 0.3))
 
 ```
 
@@ -950,7 +957,7 @@ gg_monthly_drivers_active <- monthly_drivers %>%
            position = position_dodge(width = 25), width = 20) +
   scale_x_date(date_breaks = "1 month", date_labels = "%b") +
   scale_y_continuous(labels = comma) +
-  labs(title = "Active Drivers per Month declined starting in March 2020, bottoming out at 17,000 in April.\nThe number of active drivers remained below 50% of 2019 levels.",
+  labs(title = "Active drivers per month declined starting in March 2020, bottoming out\nat 17,000 in April. The number of active drivers remained below 50% of\n2019 levels.",
        x = "Month", y = "Active Drivers (1+ Trips)",
        fill = "Year") +
   scale_fill_ipsum() +
@@ -1078,27 +1085,44 @@ gg_drivers_license_trips <- monthly_drivers %>%
 
 <div class="exec-summ-column-left">
 
-**Rideshare trips decreased by 62 million (55%) in 2020 compared to 2019.** Prior to the Stay-at-Home Order going into effect (March 21, 2020), trips were already down by about 7% year-over-year. However, the bulk of the decline in rideshare occurred in the following 9 months. From late March 2020 onwards, only 27 million rideshare trips were taken in Chicago, about 60 million fewer trips compared to the same period in 2019.
+**Rideshare trips decreased by 62 million (55%) in 2020 compared to 2019.** From late March 2020 onwards, only 27 million rideshare trips were taken in Chicago, about 60 million fewer trips compared to the same period in 2019.
 
-**Weekday trips shifted to the afternoon, and average trip duration fell by 3 minutes (-15%), but average trip distance and fare remained unchanged.** The twin peaks of the morning and evening rush during weekdays flattened out after the Stay-at-Home Order went into effect compared to 2019. Average trip duration decreased by almost 3 minutes, likely due to the decrease in congestion. The average trip distance and fare were relatively unaffected. From late March 2020 onwards, the average trip distance increased to only slightly to 6.5 miles, a 1.7% increase compared to the same period in 2019. The average trip fare during this time was about the same as in 2019.
+**Weekday trips shifted to the afternoon, and average trip duration fell by 3 minutes (-15%), but average trip distance and fare remained unchanged.** 
 
-**Trip origins and destinations were mostly unchanged. Excluding airport trips (6%-9% of all trips), the most common rides were short trips to and from the Loop and nearby areas. In both 2019 and 2020, the top 3 Community Areas (The Loop, Near North Side, and Near West Side) accounted for over 40% of all rideshare trips within the city.** There is also a clear pattern of trips up and down the lakefront, particularly on the North Side. After the Stay-at-Home Order went into effect, trips linking the South lakefront to the Loop and the North Side decreased dramatically.
+**Trip origins and destinations were mostly unchanged. Excluding airport trips (6%-9% of all trips), the most common rides were short trips to and from the Loop and nearby areas.** In both 2019 and 2020, the top 3 Community Areas (The Loop, Near North Side, and Near West Side) accounted for over 40% of all rideshare trips within the city.
 
-**While few rideshare trips were made on the South and West Sides compared to other parts of the city, rideshare trip behavior was less affected during the pandemic.** Neighborhoods on the South and West Sides saw a relative increase in their percentile rank, indicating an inelastic demand for rideshare. For example, one Census Tract in the West Side neighborhood of Austin was middle of the pack for trip pickups in 2019 (56th percentile). Pickups were almost cut in half in 2020, but the tract qualified as one of the more active pickup spots in the city (75th percentile). These South and West Side neighborhoods include some areas with a high concentration of essential workers, but the parts of the Southwest and Northwest Sides that saw the largest relative dropoff in their trip ranking are also home to many essential workers.
+**While few rideshare trips were made on the South and West Sides compared to other parts of the city, rideshare trip behavior was less affected during the pandemic.** For example, one Census Tract in the West Side neighborhood of Austin was middle of the pack for trip pickups in 2019 (56th percentile). Pickups were almost cut in half in 2020, but the tract qualified as one of the more active pickup spots in the city (75th percentile).
 
-**The number of active drivers completing 1+ trip per month decreased by 45,000 (-64%) after the Stay-at-Home Order went into effect.** This trend was also paired by a large increase in the number of inactive drivers, defined as those who completed zero trips despite being eligible to drive in Chicago that month. During this period, a higher percentage of drivers were inactive (64%) compared to 2019 (34%). A higher percentage of trips (+7%) were made by drivers with over a year's experience, both before and after the Stay-at-Home Order went into effect. Given that this trend was present during the early months of 2020 as well, it is unlikely that this was driven by the pandemic, but the shift is notable. Before and after the pandemic took hold, almost all trips were made by drivers residing in Chicago (57%) or somewhere else in the State of Illinois (37%). Very few trips were made by drivers from other states.
+**The number of active drivers completing 1+ trip per month decreased by 45,000 (-64%) after the Stay-at-Home Order went into effect.** This trend was also paired by a large increase in the number of inactive drivers, defined as those who completed zero trips despite being eligible to drive in Chicago that month. During this period, a higher percentage of drivers were inactive (64%) compared to 2019 (34%). A higher percentage of trips (+7%) were made by drivers with over a year's experience, both before and after the Stay-at-Home Order went into effect.
 
 </div>
 
 <div class="exec-summ-column-right">
 
-```{r executive summary plots}
+```{r executive summary plot 1, fig.width=6.5, out.width = "100%"}
 
 # Daily trips
-gg_daily_trips
+gg_daily_trips + 
+  theme_ipsum(plot_title_size = 12) + 
+  theme(plot.margin = margin(0, 0, 0, 0, "cm"))
+ 
+```
+
+
+```{r executive summary plot 2, fig.width=6, fig.asp=1, out.width = "100%"}
 
 # OD Pairs, Post-COVID 2020
-tmap_od_flows_exec_summ
+ggplot_od_flows_exec_summ +
+  theme(plot.margin = margin(0, 0, 0, 0, "cm"))
+
+```
+
+```{r executive summary plot 3, fig.width=6.5, out.width = "100%"}
+
+# Active Drivers
+gg_monthly_drivers_active + 
+  theme_ipsum(plot_title_size = 12) +
+  theme(plot.margin = margin(0, 0, 0, 0, "cm"))
 
 ```
 
@@ -1107,6 +1131,9 @@ tmap_od_flows_exec_summ
 </div>
 
 \newpage
+
+<br />
+<br />
 
 ## Rideshare Data
 
