@@ -164,9 +164,9 @@ gg_daily_trips <- daily_trips %>%
 daily_trips_table <- daily_trips %>%
   mutate("covid_group" = ifelse(date_x >= "2000-03-21", 
                                 "Post-COVID (3/21-12/31)", 
-                                "Pre-COVID (1/1-3/21)")) %>% 
+                                "Pre-COVID (1/1-3/20)")) %>% 
   mutate("covid_group" = factor(covid_group, 
-                                levels = c("Pre-COVID (1/1-3/21)", 
+                                levels = c("Pre-COVID (1/1-3/20)", 
                                            "Post-COVID (3/21-12/31)"))) %>% 
   group_by(covid_group, year) %>%
   summarize(trips = sum(trips)) %>%
@@ -1153,10 +1153,10 @@ ggplotly(gg_daily_trips, tooltip = "text") %>%
 
 ```
 
-**This analysis uses the day that Governor Pritzker's Stay-at-Home Order went into effect (March 21st), as a way to delineate between two time frames:**
+**This analysis uses the day of the year that Governor Pritzker's Stay-at-Home Order went into effect (March 21st), as a way to delineate between two time frames when comparing data across years:**
 
-- **"Pre-COVID" (1/1-3/21) and **
-- **"Post-COVID" (3/21-12/31)**
+- **"Pre-COVID" (1/1-3/20 for a given year) and **
+- **"Post-COVID" (3/21-12/31 for a given year)**
 
 **As the data below suggest, the use of a single date to mark the onset of the pandemic is an oversimplification, but this allows for a clean comparison of rideshare trends year-over-year.** 
 
@@ -1286,13 +1286,13 @@ ggplotly(gg_fares, tooltip = "text") %>%
 
 ## Spatial Distribution of Trips, Post-COVID
 
-The spatial distribution of rideshare trips that started and ended within the City of Chicago during the Pre-COVID period (1/1-3/21) of 2019 and 2020 were very similar. **The maps below display how spatial patterns changed after the Stay-at-Home Order went into effect, relative to 2019.**
+The spatial distribution of rideshare trips that started and ended within the City of Chicago during the Pre-COVID period (1/1-3/20) of 2019 and 2020 were very similar. **The maps below display how spatial patterns changed after the Stay-at-Home Order went into effect, relative to 2019.**
 
 **The top 20 percent of Census Tracts with the most essential workers are outlined in black. At least 532 essential workers reside in each of these tracts. Combined, these tracts are home to 121,060 (41.5%) of the city's 293,575 essential workers.** "Essential workers" are defined as: healthcare practitioners and technical occupations; healthcare support occupations; food preparation and serving related occupations; building and grounds cleaning and maintenance occupations; and personal care and service occupations.
 
 ### Origin-Destination {.tabset .tabset-pills}
 
-The spatial distribution of rideshare origins and destinations are very similar. Trips are highly concentrated around the downtown core - note the logarithmic scale of each map. While the number of trips in 2020 cratered compared to the same period in 2019, most trips started or ended around the central business district. In the Post-COVID periods of both 2019 and 2020, the top three community areas (The Loop, Near North Side, and Near West Side) accounted for over 40 percent of all rideshare trips within the city.
+The spatial distribution of rideshare origins and destinations are very similar. Trips are highly concentrated around the downtown core - note how the scale quickly increases for each map. While the number of trips in 2020 cratered compared to the same period in 2019, most trips started or ended around the central business district. In the Post-COVID periods of both 2019 and 2020, the top three community areas (The Loop, Near North Side, and Near West Side) accounted for over 40 percent of all rideshare trips within the city.
 
 The widespread decline in the volume of trips, however, does mask some relative changes in neighborhood rideshare usage. The second map shows how the percentile rank of each Census Tract changed during the Post-COVID period in 2020 versus 2019. For example, one tract in the West Side neighborhood of Austin was middle of the pack for trip pickups in 2019 (56th percentile). Pickups were almost cut in half in 2020, but the tract qualified as one of the more active pickup spots in the city (75th percentile). Neighborhoods on the South and West Sides saw a relative increase in their percentile rank, indicating an inelastic demand for rideshare. While few rideshare trips were made in these areas compared to other parts of the city, rideshare trip behavior was less affected during the pandemic.
 
@@ -1326,13 +1326,10 @@ tmap_origin_facet
 
 ```
 
-```{r origin tracts rank change tmap, fig.width=4}
+```{r origin tracts rank change tmap, fig.width=8}
 
 # Percent rank change map
-tmap_origin_rank_change +
-  tm_view(set.view = 10.5,
-          leaflet.options = list(zoomSnap = 0.5,
-                                 zoomDelta = 0.5))
+tmap_origin_rank_change
 
 ```
 
@@ -1345,7 +1342,7 @@ tmap_destination_facet
 
 ```
 
-```{r destination tracts rank change tmap}
+```{r destination tracts rank change tmap, fig.width=8}
 
 # Percent Rank Change
 tmap_destination_rank_change
